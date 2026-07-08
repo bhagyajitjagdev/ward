@@ -123,6 +123,28 @@ func (s *Store) ListWAFEvents(ctx context.Context, f WAFEventFilter) ([]model.WA
 	return out, nil
 }
 
+// LeanWAFEvent is a minimal projection of a waf_events row for dashboard aggregation.
+type LeanWAFEvent struct {
+	TS             time.Time `bun:"ts"`
+	ServiceID      *string   `bun:"service_id"`
+	IsInterrupted  bool      `bun:"is_interrupted"`
+	IsAnomalyScore bool      `bun:"is_anomaly_score"`
+}
+
+// LeanWAFEventsSince returns minimal event rows at or after `since`, for aggregation.
+func (s *Store) LeanWAFEventsSince(ctx context.Context, since time.Time) ([]LeanWAFEvent, error) {
+	var rows []LeanWAFEvent
+	err := s.DB.NewSelect().
+		TableExpr("waf_events").
+		ColumnExpr("ts").
+		ColumnExpr("service_id").
+		ColumnExpr("is_interrupted").
+		ColumnExpr("is_anomaly_score").
+		Where("ts >= ?", since).
+		Scan(ctx, &rows)
+	return rows, err
+}
+
 // GetServiceIDByHost resolves a public hostname to a service id (nil if none).
 func (s *Store) GetServiceIDByHost(ctx context.Context, host string) (*string, error) {
 	var row serviceRow

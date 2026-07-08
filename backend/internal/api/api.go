@@ -45,6 +45,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /audit-log", h.listAudit)
 
 	// edge management
+	mux.HandleFunc("GET /overview", h.overview)
 	mux.HandleFunc("GET /services", h.listServices)
 	mux.HandleFunc("POST /services", h.createService)
 	mux.HandleFunc("GET /waf-events", h.listWAFEvents)
