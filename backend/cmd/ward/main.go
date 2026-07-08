@@ -44,7 +44,21 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		cfg, err := caddy.Generate(services, exclusions, blocks, caddyOptions())
+		rateLimits, err := st.ListRateLimits(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		geoRules, err := st.ListGeoRules(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		cfg, err := caddy.Generate(caddy.Input{
+			Services:   services,
+			Exclusions: exclusions,
+			Blocks:     blocks,
+			RateLimits: rateLimits,
+			GeoRules:   geoRules,
+		}, caddyOptions())
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -98,6 +112,9 @@ func caddyOptions() caddy.Options {
 	}
 	if v := os.Getenv("WARD_ACME_EMAIL"); v != "" {
 		opt.ACMEEmail = v
+	}
+	if v := os.Getenv("WARD_GEOIP_DB"); v != "" {
+		opt.GeoIPDBPath = v
 	}
 	// Auto-HTTPS off by default in dev (no public domains → no ACME); opt in with =1.
 	opt.DisableAutoHTTPS = os.Getenv("WARD_CADDY_AUTO_HTTPS") != "1"

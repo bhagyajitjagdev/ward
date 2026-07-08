@@ -20,6 +20,7 @@ type Options struct {
 	WAFEngineMode    string // "DetectionOnly" | "On"
 	AuditLogPath     string // where Coraza writes its JSON audit log
 	ACMEEmail        string // contact email for managed (Let's Encrypt) certs
+	GeoIPDBPath      string // path to the GeoIP .mmdb for the geo matcher (empty → geo blocking off)
 }
 
 // DefaultOptions returns sane defaults.
@@ -33,10 +34,21 @@ func DefaultOptions() Options {
 	}
 }
 
-// Generate builds a full Caddy JSON config from services, WAF exclusions, and IP
-// blocks. Global blocks short-circuit at the top of the server; per-service
-// blocks deny inside that service's route.
-func Generate(services []model.Service, exclusions []model.WAFExclusion, blocks []model.BlockedIP, opt Options) ([]byte, error) {
+// Input is the desired edge state Generate renders into a Caddy config.
+type Input struct {
+	Services   []model.Service
+	Exclusions []model.WAFExclusion
+	Blocks     []model.BlockedIP
+	RateLimits []model.RateLimit
+	GeoRules   []model.GeoRule
+}
+
+// Generate builds a full Caddy JSON config from the desired edge state. Global
+// rules (IP deny, rate limit, geo deny) apply at the top of the server; per-service
+// rules apply inside that service's route.
+func Generate(in Input, opt Options) ([]byte, error) {
+	services, exclusions, blocks, rateLimits, geoRules := in.Services, in.Exclusions, in.Blocks, in.RateLimits, in.GeoRules
+
 	var globalExcl []string
 	exclByService := map[string][]string{}
 	for _, ex := range exclusions {
@@ -65,17 +77,54 @@ func Generate(services []model.Service, exclusions []model.WAFExclusion, blocks 
 		}
 	}
 
+	var globalRLs []model.RateLimit
+	rlsByService := map[string][]model.RateLimit{}
+	for _, rl := range rateLimits {
+		if rl.MaxEvents <= 0 || rl.Window == "" {
+			continue
+		}
+		switch {
+		case rl.Scope == "global":
+			globalRLs = append(globalRLs, rl)
+		case rl.ServiceID != nil:
+			rlsByService[*rl.ServiceID] = append(rlsByService[*rl.ServiceID], rl)
+		}
+	}
+
+	var globalGeo []model.GeoRule
+	geoByService := map[string][]model.GeoRule{}
+	for _, g := range geoRules {
+		if len(g.Countries) == 0 {
+			continue
+		}
+		switch {
+		case g.Scope == "global":
+			globalGeo = append(globalGeo, g)
+		case g.ServiceID != nil:
+			geoByService[*g.ServiceID] = append(geoByService[*g.ServiceID], g)
+		}
+	}
+
 	var internalSubs, managedSubs, skipSubs []string
 	routes := make([]any, 0, len(services)+1)
 	if len(globalBlocks) > 0 {
 		routes = append(routes, denyRoute(globalBlocks)) // first → short-circuits blocked IPs
+	}
+	if len(globalRLs) > 0 {
+		// pass-through middleware: caps every IP edge-wide, then continues to the service routes
+		routes = append(routes, map[string]any{"handle": []any{rateLimitHandler(globalRLs)}})
+	}
+	if opt.GeoIPDBPath != "" {
+		for _, g := range globalGeo {
+			routes = append(routes, geoDenyRoute(g.Countries, opt.GeoIPDBPath)) // 403 for blocked countries, edge-wide
+		}
 	}
 	for _, s := range services {
 		if !s.Enabled || len(s.Upstreams) == 0 {
 			continue
 		}
 		excl := append(append([]string{}, globalExcl...), exclByService[s.ID]...)
-		routes = append(routes, serviceRoute(s, opt, excl, blocksByService[s.ID]))
+		routes = append(routes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID]))
 		switch s.TLSMode {
 		case "none":
 			skipSubs = append(skipSubs, s.PublicHostname)
@@ -143,6 +192,41 @@ func denyRoute(cidrs []string) map[string]any {
 	}
 }
 
+// rateLimitHandler builds a caddy-ratelimit handler with one zone per rate limit,
+// each keyed by client IP. Over the cap → 429.
+func rateLimitHandler(rls []model.RateLimit) map[string]any {
+	zones := map[string]any{}
+	for _, rl := range rls {
+		zones[rl.ID] = map[string]any{
+			"key":        "{http.request.remote_host}",
+			"window":     rl.Window,
+			"max_events": rl.MaxEvents,
+		}
+	}
+	return map[string]any{
+		"handler":     "rate_limit",
+		"rate_limits": zones,
+	}
+}
+
+// geoDenyRoute returns 403 for requests from the given countries, via the
+// maxmind_geolocation matcher against the configured GeoIP database.
+func geoDenyRoute(countries []string, dbPath string) map[string]any {
+	return map[string]any{
+		"match": []any{map[string]any{
+			"maxmind_geolocation": map[string]any{
+				"db_path":        dbPath,
+				"deny_countries": countries,
+			},
+		}},
+		"handle": []any{map[string]any{
+			"handler":     "static_response",
+			"status_code": "403",
+			"body":        "blocked (geo)",
+		}},
+	}
+}
+
 // GenerateExclusionSecLang builds the SecLang for one scoped exclusion. With a
 // path it's a runtime rule (the wedge form: silence a rule's target on a path);
 // without a path it's a configure-time rule affecting the whole handler.
@@ -162,14 +246,22 @@ func GenerateExclusionSecLang(seclangID, ruleID int, path, target string) string
 	return fmt.Sprintf("SecRuleRemoveById %d", ruleID)
 }
 
-// serviceRoute builds one host-matched route: [per-service deny] → [waf?] → reverse_proxy.
-func serviceRoute(s model.Service, opt Options, exclusions, blockCIDRs []string) map[string]any {
-	innerRoutes := make([]any, 0, 2)
+// serviceRoute builds one host-matched route: [ip deny] → [geo deny] → [rate_limit?] → [waf?] → reverse_proxy.
+func serviceRoute(s model.Service, opt Options, exclusions, blockCIDRs []string, rateLimits []model.RateLimit, geoRules []model.GeoRule) map[string]any {
+	innerRoutes := make([]any, 0, 3)
 	if len(blockCIDRs) > 0 {
 		innerRoutes = append(innerRoutes, denyRoute(blockCIDRs))
 	}
+	if opt.GeoIPDBPath != "" {
+		for _, g := range geoRules {
+			innerRoutes = append(innerRoutes, geoDenyRoute(g.Countries, opt.GeoIPDBPath))
+		}
+	}
 
-	handlers := make([]any, 0, 2)
+	handlers := make([]any, 0, 3)
+	if len(rateLimits) > 0 {
+		handlers = append(handlers, rateLimitHandler(rateLimits)) // cheap 429 before WAF work
+	}
 	if s.WAFEnabled {
 		handlers = append(handlers, wafHandler(opt, exclusions))
 	}

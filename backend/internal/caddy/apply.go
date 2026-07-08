@@ -39,7 +39,21 @@ func (a *Applier) Apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := Generate(services, exclusions, blocks, a.opt)
+	rateLimits, err := a.store.ListRateLimits(ctx)
+	if err != nil {
+		return err
+	}
+	geoRules, err := a.store.ListGeoRules(ctx)
+	if err != nil {
+		return err
+	}
+	cfg, err := Generate(Input{
+		Services:   services,
+		Exclusions: exclusions,
+		Blocks:     blocks,
+		RateLimits: rateLimits,
+		GeoRules:   geoRules,
+	}, a.opt)
 	if err != nil {
 		return err
 	}

@@ -40,6 +40,7 @@ function BlocklistPage() {
     mutationFn: (id: string) => api.deleteBlock(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["blocklist"] })
+      qc.invalidateQueries({ queryKey: ["overview"] })
       toast.success("Unblocked")
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't unblock"),
@@ -162,6 +163,7 @@ function BlockDialog() {
       }),
     onSuccess: (b: Block) => {
       qc.invalidateQueries({ queryKey: ["blocklist"] })
+      qc.invalidateQueries({ queryKey: ["overview"] })
       toast.success(`Blocked ${b.cidr}`)
       setOpen(false)
       setCidr("")

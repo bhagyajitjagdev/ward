@@ -6,6 +6,7 @@ import {
   Server,
   FilterX,
   Ban,
+  Timer,
   Users,
   KeyRound,
   ScrollText,
@@ -54,6 +55,7 @@ const groups = [
       { title: "Services", to: "/services", icon: Server },
       { title: "Exclusions", to: "/exclusions", icon: FilterX },
       { title: "Blocklist", to: "/blocklist", icon: Ban },
+      { title: "Rate Limits", to: "/rate-limits", icon: Timer },
     ],
   },
   {

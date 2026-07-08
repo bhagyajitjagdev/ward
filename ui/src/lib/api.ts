@@ -95,6 +95,10 @@ export interface ServiceInput {
   waf_enabled?: boolean
 }
 
+export interface ServiceUpdate extends ServiceInput {
+  enabled: boolean
+}
+
 export interface WafEvent {
   id: string
   tx_id: string
@@ -175,6 +179,22 @@ export interface BlockInput {
   expires_at?: string | null
 }
 
+export interface RateLimit {
+  id: string
+  scope: "global" | "service"
+  service_id?: string | null
+  max_events: number
+  window: string
+  created_at: string
+}
+
+export interface RateLimitInput {
+  scope: "global" | "service"
+  service_id?: string | null
+  max_events: number
+  window: string
+}
+
 export interface ApiToken {
   id: string
   name: string
@@ -228,7 +248,10 @@ export const api = {
 
   // services
   listServices: () => request<Service[]>("GET", "/services"),
+  getService: (id: string) => request<Service>("GET", `/services/${id}`),
   createService: (input: ServiceInput) => request<Service>("POST", "/services", input),
+  updateService: (id: string, input: ServiceUpdate) => request<Service>("PATCH", `/services/${id}`, input),
+  deleteService: (id: string) => request<void>("DELETE", `/services/${id}`),
 
   // waf
   listWafEvents: (q: WafEventQuery = {}) => request<WafEvent[]>("GET", `/waf-events${qs(q)}`),
@@ -242,6 +265,11 @@ export const api = {
   listBlocklist: () => request<Block[]>("GET", "/blocklist"),
   createBlock: (input: BlockInput) => request<Block>("POST", "/blocklist", input),
   deleteBlock: (id: string) => request<void>("DELETE", `/blocklist/${id}`),
+
+  // rate limits
+  listRateLimits: () => request<RateLimit[]>("GET", "/rate-limits"),
+  createRateLimit: (input: RateLimitInput) => request<RateLimit>("POST", "/rate-limits", input),
+  deleteRateLimit: (id: string) => request<void>("DELETE", `/rate-limits/${id}`),
 
   // accounts
   listUsers: () => request<User[]>("GET", "/users"),

@@ -48,6 +48,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /overview", h.overview)
 	mux.HandleFunc("GET /services", h.listServices)
 	mux.HandleFunc("POST /services", h.createService)
+	mux.HandleFunc("GET /services/{id}", h.getService)
+	mux.HandleFunc("PATCH /services/{id}", h.updateService)
+	mux.HandleFunc("DELETE /services/{id}", h.deleteService)
 	mux.HandleFunc("GET /waf-events", h.listWAFEvents)
 	mux.HandleFunc("GET /waf-events/top", h.topTriggers)
 	mux.HandleFunc("GET /waf-exclusions", h.listExclusions)
@@ -56,6 +59,12 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /blocklist", h.listBlocks)
 	mux.HandleFunc("POST /blocklist", h.createBlock)
 	mux.HandleFunc("DELETE /blocklist/{id}", h.deleteBlock)
+	mux.HandleFunc("GET /rate-limits", h.listRateLimits)
+	mux.HandleFunc("POST /rate-limits", h.createRateLimit)
+	mux.HandleFunc("DELETE /rate-limits/{id}", h.deleteRateLimit)
+	mux.HandleFunc("GET /geo-rules", h.listGeoRules)
+	mux.HandleFunc("POST /geo-rules", h.createGeoRule)
+	mux.HandleFunc("DELETE /geo-rules/{id}", h.deleteGeoRule)
 	mux.HandleFunc("GET /config-snapshots", h.listSnapshots)
 	mux.HandleFunc("POST /config-snapshots/{id}/rollback", h.rollback)
 
@@ -153,6 +162,65 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 	h.audit(r, "service.create", "service:"+svc.ID, svc.PublicHostname)
 
 	writeJSON(w, http.StatusCreated, svc)
+}
+
+func (h *Handler) getService(w http.ResponseWriter, r *http.Request) {
+	svc, err := h.store.GetService(r.Context(), r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, svc)
+}
+
+func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
+	var in model.Service
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if in.Name == "" || in.PublicHostname == "" || len(in.Upstreams) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name, public_hostname and at least one upstream are required"})
+		return
+	}
+
+	svc, err := h.store.UpdateService(r.Context(), r.PathValue("id"), in)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	if errors.Is(err, store.ErrConflict) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a service with that public_hostname already exists"})
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	h.reconcile(r.Context())
+	h.audit(r, "service.update", "service:"+svc.ID, svc.PublicHostname)
+	writeJSON(w, http.StatusOK, svc)
+}
+
+func (h *Handler) deleteService(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	found, err := h.store.DeleteService(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	h.reconcile(r.Context())
+	h.audit(r, "service.delete", "service:"+id, "")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // reconcile regenerates + loads the Caddy config from current DB state.

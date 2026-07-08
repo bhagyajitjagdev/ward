@@ -18,7 +18,7 @@ func TestGenerate(t *testing.T) {
 		{ID: "svc-noup", Name: "noup", PublicHostname: "noup.example.com", Upstreams: nil, Enabled: true},
 	}
 
-	out, err := Generate(services, nil, nil, DefaultOptions())
+	out, err := Generate(Input{Services: services}, DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestGenerateWithExclusions(t *testing.T) {
 		{Scope: "global", State: "active", SecLang: "SecRuleRemoveById 920350"},
 		{Scope: "service", ServiceID: ptr("svc-harbor"), State: "draft", SecLang: "SecRuleRemoveById 999999"}, // not active → excluded
 	}
-	out, err := Generate(services, exclusions, nil, DefaultOptions())
+	out, err := Generate(Input{Services: services, Exclusions: exclusions}, DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestGenerateWithBlocks(t *testing.T) {
 		{Scope: "global", CIDR: "10.0.0.0/8"},
 		{Scope: "service", ServiceID: ptr("svc1"), CIDR: "5.6.7.8"},
 	}
-	out, err := Generate(services, nil, blocks, DefaultOptions())
+	out, err := Generate(Input{Services: services, Blocks: blocks}, DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestGenerateTLS(t *testing.T) {
 	}
 	opt := DefaultOptions()
 	opt.ACMEEmail = "ops@example.com"
-	out, err := Generate(services, nil, nil, opt)
+	out, err := Generate(Input{Services: services}, opt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestGenerateTLS(t *testing.T) {
 
 	// dev-disabled → no HTTPS, auto-https off
 	opt.DisableAutoHTTPS = true
-	out2, _ := Generate(services, nil, nil, opt)
+	out2, _ := Generate(Input{Services: services}, opt)
 	if !strings.Contains(string(out2), `"disable": true`) {
 		t.Error("expected automatic_https disabled")
 	}

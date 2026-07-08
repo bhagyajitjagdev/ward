@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -112,6 +113,62 @@ func (s *Store) ListServices(ctx context.Context) ([]model.Service, error) {
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// GetService returns one service by id (ErrNotFound if missing).
+func (s *Store) GetService(ctx context.Context, id string) (model.Service, error) {
+	var row serviceRow
+	err := s.DB.NewSelect().Model(&row).Where("id = ?", id).Limit(1).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Service{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Service{}, err
+	}
+	return row.toModel()
+}
+
+// UpdateService replaces a service's mutable fields and returns the updated row
+// (ErrNotFound if missing, ErrConflict on a hostname clash).
+func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) (model.Service, error) {
+	ups, err := json.Marshal(orEmpty(in.Upstreams))
+	if err != nil {
+		return model.Service{}, err
+	}
+	row := serviceRow{
+		ID:             id,
+		Name:           in.Name,
+		PublicHostname: in.PublicHostname,
+		Upstreams:      string(ups),
+		LBPolicy:       orDefault(in.LBPolicy, "round_robin"),
+		TLSMode:        orDefault(in.TLSMode, "internal"),
+		WAFEnabled:     in.WAFEnabled,
+		Enabled:        in.Enabled,
+		UpdatedAt:      time.Now().UTC(),
+	}
+	res, err := s.DB.NewUpdate().Model(&row).
+		Column("name", "public_hostname", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "enabled", "updated_at").
+		WherePK().Exec(ctx)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return model.Service{}, ErrConflict
+		}
+		return model.Service{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.Service{}, ErrNotFound
+	}
+	return s.GetService(ctx, id)
+}
+
+// DeleteService removes a service; reports whether one was found.
+func (s *Store) DeleteService(ctx context.Context, id string) (bool, error) {
+	res, err := s.DB.NewDelete().Model((*serviceRow)(nil)).Where("id = ?", id).Exec(ctx)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 func orDefault(v, def string) string {

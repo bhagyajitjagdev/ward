@@ -8,7 +8,9 @@
 FROM caddy:2.11.4-builder AS builder
 
 RUN xcaddy build \
-    --with github.com/corazawaf/coraza-caddy/v2
+    --with github.com/corazawaf/coraza-caddy/v2 \
+    --with github.com/mholt/caddy-ratelimit \
+    --with github.com/porech/caddy-maxmind-geolocation
 
 FROM caddy:2.11.4
 

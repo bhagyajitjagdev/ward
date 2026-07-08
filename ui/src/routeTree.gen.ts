@@ -19,9 +19,12 @@ import { Route as AppTopTriggersRouteImport } from './routes/_app.top-triggers'
 import { Route as AppTokensRouteImport } from './routes/_app.tokens'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppServicesRouteImport } from './routes/_app.services'
+import { Route as AppRateLimitsRouteImport } from './routes/_app.rate-limits'
 import { Route as AppExclusionsRouteImport } from './routes/_app.exclusions'
 import { Route as AppBlocklistRouteImport } from './routes/_app.blocklist'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
+import { Route as AppServicesIndexRouteImport } from './routes/_app.services.index'
+import { Route as AppServicesIdRouteImport } from './routes/_app.services.$id'
 
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
@@ -72,6 +75,11 @@ const AppServicesRoute = AppServicesRouteImport.update({
   path: '/services',
   getParentRoute: () => AppRoute,
 } as any)
+const AppRateLimitsRoute = AppRateLimitsRouteImport.update({
+  id: '/rate-limits',
+  path: '/rate-limits',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppExclusionsRoute = AppExclusionsRouteImport.update({
   id: '/exclusions',
   path: '/exclusions',
@@ -87,6 +95,16 @@ const AppAuditRoute = AppAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AppRoute,
 } as any)
+const AppServicesIndexRoute = AppServicesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppServicesRoute,
+} as any)
+const AppServicesIdRoute = AppServicesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppServicesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -95,12 +113,15 @@ export interface FileRoutesByFullPath {
   '/audit': typeof AppAuditRoute
   '/blocklist': typeof AppBlocklistRoute
   '/exclusions': typeof AppExclusionsRoute
-  '/services': typeof AppServicesRoute
+  '/rate-limits': typeof AppRateLimitsRoute
+  '/services': typeof AppServicesRouteWithChildren
   '/settings': typeof AppSettingsRoute
   '/tokens': typeof AppTokensRoute
   '/top-triggers': typeof AppTopTriggersRoute
   '/users': typeof AppUsersRoute
   '/waf-events': typeof AppWafEventsRoute
+  '/services/$id': typeof AppServicesIdRoute
+  '/services/': typeof AppServicesIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -108,13 +129,15 @@ export interface FileRoutesByTo {
   '/audit': typeof AppAuditRoute
   '/blocklist': typeof AppBlocklistRoute
   '/exclusions': typeof AppExclusionsRoute
-  '/services': typeof AppServicesRoute
+  '/rate-limits': typeof AppRateLimitsRoute
   '/settings': typeof AppSettingsRoute
   '/tokens': typeof AppTokensRoute
   '/top-triggers': typeof AppTopTriggersRoute
   '/users': typeof AppUsersRoute
   '/waf-events': typeof AppWafEventsRoute
   '/': typeof AppIndexRoute
+  '/services/$id': typeof AppServicesIdRoute
+  '/services': typeof AppServicesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -124,13 +147,16 @@ export interface FileRoutesById {
   '/_app/audit': typeof AppAuditRoute
   '/_app/blocklist': typeof AppBlocklistRoute
   '/_app/exclusions': typeof AppExclusionsRoute
-  '/_app/services': typeof AppServicesRoute
+  '/_app/rate-limits': typeof AppRateLimitsRoute
+  '/_app/services': typeof AppServicesRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
   '/_app/tokens': typeof AppTokensRoute
   '/_app/top-triggers': typeof AppTopTriggersRoute
   '/_app/users': typeof AppUsersRoute
   '/_app/waf-events': typeof AppWafEventsRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/services/$id': typeof AppServicesIdRoute
+  '/_app/services/': typeof AppServicesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,12 +167,15 @@ export interface FileRouteTypes {
     | '/audit'
     | '/blocklist'
     | '/exclusions'
+    | '/rate-limits'
     | '/services'
     | '/settings'
     | '/tokens'
     | '/top-triggers'
     | '/users'
     | '/waf-events'
+    | '/services/$id'
+    | '/services/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -154,13 +183,15 @@ export interface FileRouteTypes {
     | '/audit'
     | '/blocklist'
     | '/exclusions'
-    | '/services'
+    | '/rate-limits'
     | '/settings'
     | '/tokens'
     | '/top-triggers'
     | '/users'
     | '/waf-events'
     | '/'
+    | '/services/$id'
+    | '/services'
   id:
     | '__root__'
     | '/_app'
@@ -169,6 +200,7 @@ export interface FileRouteTypes {
     | '/_app/audit'
     | '/_app/blocklist'
     | '/_app/exclusions'
+    | '/_app/rate-limits'
     | '/_app/services'
     | '/_app/settings'
     | '/_app/tokens'
@@ -176,6 +208,8 @@ export interface FileRouteTypes {
     | '/_app/users'
     | '/_app/waf-events'
     | '/_app/'
+    | '/_app/services/$id'
+    | '/_app/services/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -256,6 +290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppServicesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/rate-limits': {
+      id: '/_app/rate-limits'
+      path: '/rate-limits'
+      fullPath: '/rate-limits'
+      preLoaderRoute: typeof AppRateLimitsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/exclusions': {
       id: '/_app/exclusions'
       path: '/exclusions'
@@ -277,14 +318,43 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAuditRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/services/': {
+      id: '/_app/services/'
+      path: '/'
+      fullPath: '/services/'
+      preLoaderRoute: typeof AppServicesIndexRouteImport
+      parentRoute: typeof AppServicesRoute
+    }
+    '/_app/services/$id': {
+      id: '/_app/services/$id'
+      path: '/$id'
+      fullPath: '/services/$id'
+      preLoaderRoute: typeof AppServicesIdRouteImport
+      parentRoute: typeof AppServicesRoute
+    }
   }
 }
+
+interface AppServicesRouteChildren {
+  AppServicesIdRoute: typeof AppServicesIdRoute
+  AppServicesIndexRoute: typeof AppServicesIndexRoute
+}
+
+const AppServicesRouteChildren: AppServicesRouteChildren = {
+  AppServicesIdRoute: AppServicesIdRoute,
+  AppServicesIndexRoute: AppServicesIndexRoute,
+}
+
+const AppServicesRouteWithChildren = AppServicesRoute._addFileChildren(
+  AppServicesRouteChildren,
+)
 
 interface AppRouteChildren {
   AppAuditRoute: typeof AppAuditRoute
   AppBlocklistRoute: typeof AppBlocklistRoute
   AppExclusionsRoute: typeof AppExclusionsRoute
-  AppServicesRoute: typeof AppServicesRoute
+  AppRateLimitsRoute: typeof AppRateLimitsRoute
+  AppServicesRoute: typeof AppServicesRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
   AppTokensRoute: typeof AppTokensRoute
   AppTopTriggersRoute: typeof AppTopTriggersRoute
@@ -297,7 +367,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppAuditRoute: AppAuditRoute,
   AppBlocklistRoute: AppBlocklistRoute,
   AppExclusionsRoute: AppExclusionsRoute,
-  AppServicesRoute: AppServicesRoute,
+  AppRateLimitsRoute: AppRateLimitsRoute,
+  AppServicesRoute: AppServicesRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
   AppTokensRoute: AppTokensRoute,
   AppTopTriggersRoute: AppTopTriggersRoute,
