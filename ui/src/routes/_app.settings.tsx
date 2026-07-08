@@ -1,12 +1,16 @@
 import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { AlertTriangle, Moon, Sun } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PageHeader } from "@/components/console"
 import { useTheme } from "@/lib/theme"
+import { api, ApiError } from "@/lib/api"
+import type { WafMode } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export const Route = createFileRoute("/_app/settings")({
@@ -15,7 +19,6 @@ export const Route = createFileRoute("/_app/settings")({
 
 function SettingsPage() {
   const { theme, toggle } = useTheme()
-  const [mode, setMode] = useState<"DetectionOnly" | "Blocking">("DetectionOnly")
   const [email, setEmail] = useState("ops@acme.com")
   const [retention, setRetention] = useState("30")
 
@@ -24,29 +27,7 @@ function SettingsPage() {
       <PageHeader eyebrow="Admin" title="Settings" description="Edge-wide configuration. Changes are recorded in the audit log." />
 
       <div className="max-w-3xl space-y-6">
-        <Section
-          title="WAF engine"
-          description="How the WAF treats detections across every protected service."
-        >
-          <Segmented
-            options={[
-              { value: "DetectionOnly", label: "Detection only" },
-              { value: "Blocking", label: "Blocking" },
-            ]}
-            value={mode}
-            onChange={(v) => setMode(v as typeof mode)}
-          />
-          {mode === "Blocking" ? (
-            <p className="flex items-start gap-2 text-xs text-amber-500">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              Attacks will be answered with 403. Make sure you've tuned false positives first — check Top Triggers.
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              The WAF logs detections but lets requests through. Safe for soaking before you flip to blocking.
-            </p>
-          )}
-        </Section>
+        <WafEngineSection />
 
         <Section
           title="TLS"
@@ -94,6 +75,56 @@ function SettingsPage() {
         </Section>
       </div>
     </div>
+  )
+}
+
+function WafEngineSection() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const mode = data?.waf_engine_mode ?? "DetectionOnly"
+  const update = useMutation({
+    mutationFn: (m: WafMode) => api.updateSettings({ waf_engine_mode: m }),
+    onSuccess: (s) => {
+      qc.setQueryData(["settings"], s)
+      toast.success(
+        s.waf_engine_mode === "On" ? "WAF now enforcing — attacks get a 403" : "WAF back to detection-only",
+      )
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't change the WAF mode"),
+  })
+
+  return (
+    <Section
+      title="WAF engine default"
+      description="The default enforcement mode for every protected service. Any service can override it on its own page."
+    >
+      {isLoading ? (
+        <Skeleton className="h-9 w-56" />
+      ) : (
+        <>
+          <Segmented
+            options={[
+              { value: "DetectionOnly", label: "Detection only" },
+              { value: "On", label: "Enforcing" },
+            ]}
+            value={mode}
+            onChange={(v) => {
+              if (v !== mode) update.mutate(v as WafMode)
+            }}
+          />
+          {mode === "On" ? (
+            <p className="flex items-start gap-2 text-xs text-amber-500">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              Attacks get a 403 on every service that inherits this. Tune false positives first — check Top Triggers.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              The WAF logs detections but lets requests through. Soak here until the false positives are gone, then enforce.
+            </p>
+          )}
+        </>
+      )}
+    </Section>
   )
 }
 

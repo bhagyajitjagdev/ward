@@ -73,6 +73,8 @@ export interface LoginResponse {
   user: User
 }
 
+export type WafMode = "DetectionOnly" | "On"
+
 export interface Service {
   id: string
   name: string
@@ -81,6 +83,7 @@ export interface Service {
   lb_policy: string
   tls_mode: string
   waf_enabled: boolean
+  waf_mode: "" | WafMode // "" = inherit the global default
   enabled: boolean
   created_at: string
   updated_at: string
@@ -93,6 +96,11 @@ export interface ServiceInput {
   lb_policy?: string
   tls_mode?: string
   waf_enabled?: boolean
+  waf_mode?: "" | WafMode
+}
+
+export interface Settings {
+  waf_engine_mode: WafMode
 }
 
 export interface ServiceUpdate extends ServiceInput {
@@ -333,4 +341,8 @@ export const api = {
   createApiToken: (name: string) => request<ApiToken>("POST", "/api-tokens", { name }),
   revokeApiToken: (id: string) => request<void>("DELETE", `/api-tokens/${id}`),
   listAuditLog: (limit?: number) => request<AuditEntry[]>("GET", `/audit-log${qs({ limit })}`),
+
+  // settings
+  getSettings: () => request<Settings>("GET", "/settings"),
+  updateSettings: (input: Settings) => request<Settings>("PATCH", "/settings", input),
 }

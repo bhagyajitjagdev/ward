@@ -53,13 +53,15 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		opt := caddyOptions()
+		opt.WAFEngineMode = st.WAFEngineMode(ctx, opt.WAFEngineMode)
 		cfg, err := caddy.Generate(caddy.Input{
 			Services:   services,
 			Exclusions: exclusions,
 			Blocks:     blocks,
 			RateLimits: rateLimits,
 			GeoRules:   geoRules,
-		}, caddyOptions())
+		}, opt)
 		if err != nil {
 			log.Fatal(err)
 		}

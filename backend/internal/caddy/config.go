@@ -338,7 +338,11 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 		handlers = append(handlers, rateLimitHandler(rateLimits)) // cheap 429 before WAF work
 	}
 	if s.WAFEnabled {
-		handlers = append(handlers, wafHandler(opt, exclusions))
+		mode := s.WAFMode
+		if mode == "" {
+			mode = opt.WAFEngineMode // inherit the global default
+		}
+		handlers = append(handlers, wafHandler(opt, mode, exclusions))
 	}
 	handlers = append(handlers, reverseProxyHandler(s))
 	innerRoutes = append(innerRoutes, map[string]any{"handle": handlers})
@@ -365,19 +369,19 @@ func reverseProxyHandler(s model.Service) map[string]any {
 	return h
 }
 
-func wafHandler(opt Options, exclusions []string) map[string]any {
+func wafHandler(opt Options, mode string, exclusions []string) map[string]any {
 	return map[string]any{
 		"handler":        "waf",
 		"load_owasp_crs": true,
-		"directives":     buildDirectives(opt, exclusions),
+		"directives":     buildDirectives(opt, mode, exclusions),
 	}
 }
 
 // buildDirectives is the per-service SecLang: bundled CRS (read-only) → engine
-// mode → audit logging → Ward-managed exclusions (appended AFTER the CRS).
-func buildDirectives(opt Options, exclusions []string) string {
-	mode := opt.WAFEngineMode
-	if mode == "" {
+// mode → audit logging → Ward-managed exclusions (appended AFTER the CRS). mode is
+// the service's effective engine mode (its override, else the global default).
+func buildDirectives(opt Options, mode string, exclusions []string) string {
+	if mode != "On" && mode != "DetectionOnly" {
 		mode = "DetectionOnly"
 	}
 	audit := opt.AuditLogPath

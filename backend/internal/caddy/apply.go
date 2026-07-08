@@ -49,7 +49,8 @@ func (a *Applier) Apply(ctx context.Context) error {
 		return err
 	}
 	opt := a.opt
-	opt.GeoIPDBPath = geoip.ActivePath(geoip.Dir()) // pick up a newly added/removed DB
+	opt.GeoIPDBPath = geoip.ActivePath(geoip.Dir())               // pick up a newly added/removed DB
+	opt.WAFEngineMode = a.store.WAFEngineMode(ctx, opt.WAFEngineMode) // DB setting overrides the env/compiled default
 	cfg, err := Generate(Input{
 		Services:   services,
 		Exclusions: exclusions,

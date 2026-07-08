@@ -33,6 +33,8 @@ export function AppHeader() {
   const { pathname } = useLocation()
   const { theme, toggle } = useTheme()
   const { data: overview } = useQuery({ queryKey: ["overview"], queryFn: api.overview })
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const enforcing = settings?.waf_engine_mode === "On"
 
   return (
     <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur-sm">
@@ -48,7 +50,7 @@ export function AppHeader() {
         {overview && (
           <div className="hidden items-center gap-2.5 rounded-md border bg-muted/30 px-3 py-1.5 font-mono text-[11px] md:flex">
             <span className="flex items-center gap-1.5">
-              <StatusDot tone="detecting" /> DetectionOnly
+              <StatusDot tone={enforcing ? "threat" : "detecting"} /> {enforcing ? "Enforcing" : "DetectionOnly"}
             </span>
             <span className="text-border">·</span>
             <span className="text-muted-foreground">

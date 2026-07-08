@@ -265,7 +265,7 @@ function CreateServiceDialog() {
             <span>
               <span className="font-medium">Protect with the WAF</span>
               <span className="block text-xs text-muted-foreground">
-                Coraza + OWASP CRS in DetectionOnly — logs, doesn't block, until you flip it.
+                Coraza + OWASP CRS, following the global engine default. Override it per service once it's tuned.
               </span>
             </span>
           </label>

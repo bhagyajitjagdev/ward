@@ -40,6 +40,7 @@ type serviceRow struct {
 	LBPolicy       string    `bun:"lb_policy,notnull"`
 	TLSMode        string    `bun:"tls_mode,notnull"`
 	WAFEnabled     bool      `bun:"waf_enabled,notnull"`
+	WAFMode        string    `bun:"waf_mode,notnull"`
 	Enabled        bool      `bun:"enabled,notnull"`
 	CreatedAt      time.Time `bun:"created_at,notnull"`
 	UpdatedAt      time.Time `bun:"updated_at,notnull"`
@@ -60,6 +61,7 @@ func (r serviceRow) toModel() (model.Service, error) {
 		LBPolicy:       r.LBPolicy,
 		TLSMode:        r.TLSMode,
 		WAFEnabled:     r.WAFEnabled,
+		WAFMode:        r.WAFMode,
 		Enabled:        r.Enabled,
 		CreatedAt:      r.CreatedAt,
 		UpdatedAt:      r.UpdatedAt,
@@ -85,6 +87,7 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 		LBPolicy:       orDefault(in.LBPolicy, "round_robin"),
 		TLSMode:        orDefault(in.TLSMode, "internal"),
 		WAFEnabled:     in.WAFEnabled,
+		WAFMode:        in.WAFMode,
 		Enabled:        true,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -143,11 +146,12 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 		LBPolicy:       orDefault(in.LBPolicy, "round_robin"),
 		TLSMode:        orDefault(in.TLSMode, "internal"),
 		WAFEnabled:     in.WAFEnabled,
+		WAFMode:        in.WAFMode,
 		Enabled:        in.Enabled,
 		UpdatedAt:      time.Now().UTC(),
 	}
 	res, err := s.DB.NewUpdate().Model(&row).
-		Column("name", "public_hostname", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "enabled", "updated_at").
+		Column("name", "public_hostname", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "enabled", "updated_at").
 		WherePK().Exec(ctx)
 	if err != nil {
 		if isUniqueViolation(err) {

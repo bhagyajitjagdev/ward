@@ -72,6 +72,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("DELETE /geoip", h.geoipDelete)
 	mux.HandleFunc("GET /config-snapshots", h.listSnapshots)
 	mux.HandleFunc("POST /config-snapshots/{id}/rollback", h.rollback)
+	mux.HandleFunc("GET /settings", h.getSettings)
+	mux.HandleFunc("PATCH /settings", h.updateSettings)
 
 	return h.authMiddleware(mux)
 }
@@ -150,6 +152,10 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name, public_hostname and at least one upstream are required"})
 		return
 	}
+	if !validWAFMode(in.WAFMode) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "waf_mode must be empty, 'DetectionOnly' or 'On'"})
+		return
+	}
 
 	svc, err := h.store.CreateService(r.Context(), in)
 	if err != nil {
@@ -190,6 +196,10 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Name == "" || in.PublicHostname == "" || len(in.Upstreams) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name, public_hostname and at least one upstream are required"})
+		return
+	}
+	if !validWAFMode(in.WAFMode) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "waf_mode must be empty, 'DetectionOnly' or 'On'"})
 		return
 	}
 

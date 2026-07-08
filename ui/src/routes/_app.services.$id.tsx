@@ -6,7 +6,7 @@ import { ArrowLeft, Pencil, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PageHeader, StatusDot, SeverityBadge, Mono, ago, normalizeSeverity } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
-import type { Service } from "@/lib/api"
+import type { Service, WafMode } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -35,6 +35,7 @@ function ServiceDetailPage() {
   })
   const { data: allExclusions } = useQuery({ queryKey: ["exclusions"], queryFn: api.listExclusions })
   const { data: allBlocks } = useQuery({ queryKey: ["blocklist"], queryFn: api.listBlocklist })
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
   const exclusions = (allExclusions ?? []).filter((x) => x.service_id === id)
   const blocks = (allBlocks ?? []).filter((b) => b.service_id === id)
 
@@ -56,6 +57,8 @@ function ServiceDetailPage() {
       </div>
     )
   }
+
+  const effectiveWafMode: WafMode = svc.waf_mode || settings?.waf_engine_mode || "DetectionOnly"
 
   return (
     <div className="space-y-8">
@@ -84,9 +87,19 @@ function ServiceDetailPage() {
               </span>
             </Field>
             <Field label="WAF">
-              <span className="inline-flex items-center gap-1.5">
-                <StatusDot tone={svc.waf_enabled ? "armed" : "idle"} /> {svc.waf_enabled ? "armed" : "off"}
-              </span>
+              {svc.waf_enabled ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusDot tone={effectiveWafMode === "On" ? "threat" : "detecting"} />
+                  {effectiveWafMode === "On" ? "enforcing" : "detection-only"}
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {svc.waf_mode ? "· override" : "· inherited"}
+                  </span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusDot tone="idle" /> off
+                </span>
+              )}
             </Field>
             <Field label="Public hostname" mono>
               {svc.public_hostname}
@@ -215,6 +228,7 @@ function EditDialog({ service }: { service: Service }) {
   const [tlsMode, setTlsMode] = useState(service.tls_mode)
   const [lbPolicy, setLbPolicy] = useState(service.lb_policy)
   const [wafEnabled, setWafEnabled] = useState(service.waf_enabled)
+  const [wafMode, setWafMode] = useState<"" | WafMode>(service.waf_mode)
   const [enabled, setEnabled] = useState(service.enabled)
 
   const save = useMutation({
@@ -229,6 +243,7 @@ function EditDialog({ service }: { service: Service }) {
         tls_mode: tlsMode,
         lb_policy: lbPolicy,
         waf_enabled: wafEnabled,
+        waf_mode: wafEnabled ? wafMode : "",
         enabled,
       }),
     onSuccess: () => {
@@ -306,6 +321,23 @@ function EditDialog({ service }: { service: Service }) {
               <input type="checkbox" checked={wafEnabled} onChange={(e) => setWafEnabled(e.target.checked)} className="size-4 accent-primary" />
               Protect with the WAF
             </label>
+            {wafEnabled && (
+              <div className="ml-6 space-y-1.5">
+                <Label htmlFor="e-wafmode" className="text-xs text-muted-foreground">
+                  Enforcement
+                </Label>
+                <Select value={wafMode || "inherit"} onValueChange={(v) => setWafMode(v === "inherit" ? "" : (v as WafMode))}>
+                  <SelectTrigger id="e-wafmode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">Inherit global default</SelectItem>
+                    <SelectItem value="DetectionOnly">Detection only</SelectItem>
+                    <SelectItem value="On">Enforcing · 403 on attack</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <label className="flex items-center gap-2.5 text-sm">
               <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="size-4 accent-primary" />
               Enabled (serving traffic)

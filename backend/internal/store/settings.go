@@ -15,6 +15,18 @@ type settingRow struct {
 	Value string `bun:"value,notnull"`
 }
 
+// WAFModeKey is the settings key holding the global WAF engine-mode default.
+const WAFModeKey = "waf.engine_mode"
+
+// WAFEngineMode returns the global WAF engine-mode default, falling back to
+// `fallback` (the env/compiled default) when the setting is unset.
+func (s *Store) WAFEngineMode(ctx context.Context, fallback string) string {
+	if v, err := s.GetSetting(ctx, WAFModeKey); err == nil && v != "" {
+		return v
+	}
+	return fallback
+}
+
 // GetSetting returns the value for key, or "" if unset.
 func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
 	var row settingRow

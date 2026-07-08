@@ -13,6 +13,7 @@ type Service struct {
 	LBPolicy       string    `json:"lb_policy"`
 	TLSMode        string    `json:"tls_mode"`
 	WAFEnabled     bool      `json:"waf_enabled"`
+	WAFMode        string    `json:"waf_mode"` // "" = inherit global default | "DetectionOnly" | "On"
 	Enabled        bool      `json:"enabled"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
