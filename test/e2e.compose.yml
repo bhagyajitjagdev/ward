@@ -1,0 +1,26 @@
+# Dev integration harness for the full wedge loop: Ward configures a real
+# Caddy+Coraza, Coraza writes its audit log to a shared volume, Ward ingests it,
+# and Ward-authored exclusions flow back into the config. Fully in-network.
+services:
+  caddy:
+    build: ../caddy # custom Caddy+Coraza image
+    command: caddy run --config /etc/caddy/bootstrap.json
+    volumes:
+      - ./bootstrap.json:/etc/caddy/bootstrap.json:ro
+      - audit:/shared
+  whoami:
+    image: traefik/whoami
+  ward:
+    build: ../backend
+    user: "0:0" # test-only: read Caddy's root-written audit log (deploy aligns perms)
+    environment:
+      WARD_CADDY_ADMIN: http://caddy:2019
+      WARD_WAF_AUDIT_LOG: /shared/audit.log # Coraza writes here (generated config)
+      WARD_AUDIT_LOG: /shared/audit.log # Ward tails here
+      WARD_AUDIT_INTERVAL_MS: "300"
+      WARD_CADDY_AUTO_HTTPS: "${WARD_AUTO_HTTPS:-}" # set WARD_AUTO_HTTPS=1 to test managed/internal TLS
+    volumes:
+      - audit:/shared
+    depends_on: [caddy, whoami]
+volumes:
+  audit:

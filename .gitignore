@@ -1,0 +1,22 @@
+# Go build artifacts
+/backend/ward
+/backend/**/*.test
+*.out
+
+# Local databases
+*.db
+*.db-wal
+*.db-shm
+
+# Local caches / scratch
+.cache/
+
+# Frontend (ward-ui, later)
+node_modules/
+dist/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
