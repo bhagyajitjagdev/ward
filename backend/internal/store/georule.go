@@ -16,6 +16,7 @@ type geoRuleRow struct {
 
 	ID        string    `bun:"id,pk"`
 	Scope     string    `bun:"scope,notnull"`
+	Mode      string    `bun:"mode,notnull"`
 	ServiceID *string   `bun:"service_id"`
 	Countries string    `bun:"countries,notnull"` // JSON array
 	CreatedAt time.Time `bun:"created_at,notnull"`
@@ -27,7 +28,7 @@ func (r geoRuleRow) toModel() model.GeoRule {
 		_ = json.Unmarshal([]byte(r.Countries), &cs)
 	}
 	return model.GeoRule{
-		ID: r.ID, Scope: r.Scope, ServiceID: r.ServiceID, Countries: cs, CreatedAt: r.CreatedAt,
+		ID: r.ID, Scope: r.Scope, Mode: r.Mode, ServiceID: r.ServiceID, Countries: cs, CreatedAt: r.CreatedAt,
 	}
 }
 
@@ -42,8 +43,8 @@ func (s *Store) CreateGeoRule(ctx context.Context, in model.GeoRule) (model.GeoR
 		return model.GeoRule{}, err
 	}
 	row := geoRuleRow{
-		ID: id.String(), Scope: orDefault(in.Scope, "global"), ServiceID: in.ServiceID,
-		Countries: string(cs), CreatedAt: time.Now().UTC(),
+		ID: id.String(), Scope: orDefault(in.Scope, "global"), Mode: orDefault(in.Mode, "block"),
+		ServiceID: in.ServiceID, Countries: string(cs), CreatedAt: time.Now().UTC(),
 	}
 	if _, err := s.DB.NewInsert().Model(&row).Exec(ctx); err != nil {
 		return model.GeoRule{}, err

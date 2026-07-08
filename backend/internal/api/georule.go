@@ -55,6 +55,13 @@ func (h *Handler) createGeoRule(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "scope must be 'global' or 'service'"})
 		return
 	}
+	if in.Mode == "" {
+		in.Mode = "block"
+	}
+	if in.Mode != "block" && in.Mode != "allow" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be 'block' or 'allow'"})
+		return
+	}
 
 	rule, err := h.store.CreateGeoRule(r.Context(), in)
 	if err != nil {

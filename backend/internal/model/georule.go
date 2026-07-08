@@ -8,6 +8,7 @@ import "time"
 type GeoRule struct {
 	ID        string    `json:"id"`
 	Scope     string    `json:"scope"` // "global" | "service"
+	Mode      string    `json:"mode"`  // "block" (deny these) | "allow" (deny every other country)
 	ServiceID *string   `json:"service_id,omitempty"`
 	Countries []string  `json:"countries"` // ISO 3166-1 alpha-2 codes, e.g. ["RU","CN"]
 	CreatedAt time.Time `json:"created_at"`

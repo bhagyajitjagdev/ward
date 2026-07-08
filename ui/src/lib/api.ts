@@ -163,6 +163,7 @@ export interface ExclusionInput {
 export interface Block {
   id: string
   scope: "global" | "service"
+  mode: "block" | "allow"
   service_id?: string | null
   cidr: string
   reason?: string
@@ -174,6 +175,7 @@ export interface Block {
 export interface BlockInput {
   cidr: string
   scope?: "global" | "service"
+  mode?: "block" | "allow"
   service_id?: string | null
   reason?: string
   expires_at?: string | null
@@ -198,6 +200,7 @@ export interface RateLimitInput {
 export interface GeoRule {
   id: string
   scope: "global" | "service"
+  mode: "block" | "allow"
   service_id?: string | null
   countries: string[]
   created_at: string
@@ -205,6 +208,7 @@ export interface GeoRule {
 
 export interface GeoRuleInput {
   scope: "global" | "service"
+  mode?: "block" | "allow"
   service_id?: string | null
   countries: string[]
 }

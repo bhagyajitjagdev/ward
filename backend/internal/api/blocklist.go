@@ -44,6 +44,13 @@ func (h *Handler) createBlock(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "scope must be 'global' or 'service'"})
 		return
 	}
+	if in.Mode == "" {
+		in.Mode = "block"
+	}
+	if in.Mode != "block" && in.Mode != "allow" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be 'block' or 'allow'"})
+		return
+	}
 	in.Source = "manual"
 
 	b, err := h.store.CreateBlock(r.Context(), in)
@@ -51,8 +58,12 @@ func (h *Handler) createBlock(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	h.reconcile(r.Context()) // regenerate deny matchers + push to Caddy
-	h.audit(r, "ip.block", "ip:"+b.CIDR, b.Reason)
+	h.reconcile(r.Context()) // regenerate matchers + push to Caddy
+	action := "ip.block"
+	if b.Mode == "allow" {
+		action = "ip.allow"
+	}
+	h.audit(r, action, "ip:"+b.CIDR, b.Reason)
 	writeJSON(w, http.StatusCreated, b)
 }
 

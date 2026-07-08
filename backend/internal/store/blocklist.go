@@ -15,6 +15,7 @@ type blockRow struct {
 
 	ID        string     `bun:"id,pk"`
 	Scope     string     `bun:"scope,notnull"`
+	Mode      string     `bun:"mode,notnull"`
 	ServiceID *string    `bun:"service_id"`
 	CIDR      string     `bun:"cidr,notnull"`
 	Reason    string     `bun:"reason"`
@@ -25,7 +26,7 @@ type blockRow struct {
 
 func (r blockRow) toModel() model.BlockedIP {
 	return model.BlockedIP{
-		ID: r.ID, Scope: r.Scope, ServiceID: r.ServiceID, CIDR: r.CIDR,
+		ID: r.ID, Scope: r.Scope, Mode: r.Mode, ServiceID: r.ServiceID, CIDR: r.CIDR,
 		Reason: r.Reason, Source: r.Source, ExpiresAt: r.ExpiresAt, CreatedAt: r.CreatedAt,
 	}
 }
@@ -37,8 +38,8 @@ func (s *Store) CreateBlock(ctx context.Context, in model.BlockedIP) (model.Bloc
 		return model.BlockedIP{}, err
 	}
 	row := blockRow{
-		ID: id.String(), Scope: orDefault(in.Scope, "global"), ServiceID: in.ServiceID,
-		CIDR: in.CIDR, Reason: in.Reason, Source: orDefault(in.Source, "manual"),
+		ID: id.String(), Scope: orDefault(in.Scope, "global"), Mode: orDefault(in.Mode, "block"),
+		ServiceID: in.ServiceID, CIDR: in.CIDR, Reason: in.Reason, Source: orDefault(in.Source, "manual"),
 		ExpiresAt: in.ExpiresAt, CreatedAt: time.Now().UTC(),
 	}
 	if _, err := s.DB.NewInsert().Model(&row).Exec(ctx); err != nil {

@@ -3,7 +3,8 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Globe, Trash2, AlertTriangle, Upload, Download, KeyRound } from "lucide-react"
-import { PageHeader, StatusDot, Mono, ago } from "@/components/console"
+import { PageHeader, StatusDot, Mono, ago, ModeBadge, ModeToggle } from "@/components/console"
+import type { RuleMode } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
 import type { GeoRule } from "@/lib/api"
 import { useServices, useServiceNames } from "@/data/queries"
@@ -38,7 +39,7 @@ function GeoPage() {
       <PageHeader
         eyebrow="Edge"
         title="Geo Blocking"
-        description="Deny traffic by country — globally or per service. Needs a GeoIP database, which you can bring however you like."
+        description="Block or allow traffic by country — globally or per service. Needs a GeoIP database, which you can bring however you like."
         actions={<AddRuleDialog />}
       />
       <GeoIPPanel />
@@ -205,7 +206,7 @@ function RulesTable() {
         <thead>
           <tr className="border-b bg-muted/30 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
             <th className="px-4 py-2.5 font-medium">Scope</th>
-            <th className="px-4 py-2.5 font-medium">Blocked countries</th>
+            <th className="px-4 py-2.5 font-medium">Countries</th>
             <th className="px-4 py-2.5 font-medium">Added</th>
             <th className="w-10" />
           </tr>
@@ -228,7 +229,7 @@ function RulesTable() {
           {rules?.length === 0 && (
             <tr>
               <td colSpan={4} className="py-16 text-center text-sm text-muted-foreground">
-                No geo rules yet — add one to deny a set of countries.
+                No geo rules yet — block a set of countries, or allow only some.
               </td>
             </tr>
           )}
@@ -240,11 +241,16 @@ function RulesTable() {
                 </span>
               </td>
               <td className="px-4 py-3">
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <ModeBadge mode={g.mode} />
                   {g.countries.map((c) => (
                     <span
                       key={c}
-                      className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 font-mono text-[11px] text-red-600 dark:text-red-400"
+                      className={`rounded border px-1.5 py-0.5 font-mono text-[11px] ${
+                        g.mode === "allow"
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400"
+                      }`}
                     >
                       {c}
                     </span>
@@ -282,10 +288,12 @@ function AddRuleDialog() {
   const [open, setOpen] = useState(false)
   const [scope, setScope] = useState("global") // "global" | <service id>
   const [countries, setCountries] = useState("")
+  const [mode, setMode] = useState<RuleMode>("block")
 
   const create = useMutation({
     mutationFn: () =>
       api.createGeoRule({
+        mode,
         scope: scope === "global" ? "global" : "service",
         service_id: scope === "global" ? undefined : scope,
         countries: countries
@@ -295,10 +303,13 @@ function AddRuleDialog() {
       }),
     onSuccess: (g: GeoRule) => {
       qc.invalidateQueries({ queryKey: ["geo-rules"] })
-      toast.success(`Blocking ${g.countries.join(", ")}`)
+      toast.success(
+        g.mode === "allow" ? `Allowing only ${g.countries.join(", ")}` : `Blocking ${g.countries.join(", ")}`,
+      )
       setOpen(false)
       setScope("global")
       setCountries("")
+      setMode("block")
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't add the rule"),
   })
@@ -307,13 +318,13 @@ function AddRuleDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button>
-          <Globe className="size-4" /> Block countries
+          <Globe className="size-4" /> Add rule
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Block countries</DialogTitle>
-          <DialogDescription>Requests from these countries get a 403, at the edge, before reaching the service.</DialogDescription>
+          <DialogTitle>Add a geo rule</DialogTitle>
+          <DialogDescription>A 403 at the edge, by country, before requests reach the service.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -322,6 +333,17 @@ function AddRuleDialog() {
           }}
           className="space-y-4"
         >
+          <ModeToggle value={mode} onChange={setMode} />
+          {mode === "allow" && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                Allow-only 403s <strong>every</strong> country except these
+                {scope === "global" ? " across the whole edge" : " for this service"} — including your own. List every
+                country that should have access.
+              </span>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="scope">Scope</Label>
             <Select value={scope} onValueChange={setScope}>
@@ -354,7 +376,7 @@ function AddRuleDialog() {
               Cancel
             </Button>
             <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Adding…" : "Block"}
+              {create.isPending ? "Adding…" : mode === "allow" ? "Allow only these" : "Block"}
             </Button>
           </DialogFooter>
         </form>

@@ -109,6 +109,42 @@ export function until(iso: string): string {
 
 export const fmt = new Intl.NumberFormat("en-US")
 
+export type RuleMode = "block" | "allow"
+
+// A small badge showing whether a rule blocks the listed entries or allows only them.
+export function ModeBadge({ mode }: { mode: RuleMode }) {
+  return mode === "allow" ? (
+    <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
+      allow-only
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 font-mono text-[11px] text-red-600 dark:text-red-400">
+      block
+    </span>
+  )
+}
+
+// Segmented "Block these" / "Allow only these" toggle for rule dialogs.
+export function ModeToggle({ value, onChange }: { value: RuleMode; onChange: (v: RuleMode) => void }) {
+  return (
+    <div className="inline-flex w-full rounded-md border bg-background p-0.5">
+      {(["block", "allow"] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => onChange(m)}
+          className={cn(
+            "flex-1 rounded px-3 py-1.5 text-sm font-medium transition-colors",
+            value === m ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {m === "block" ? "Block these" : "Allow only these"}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // Placeholder for screens still being designed.
 export function Soon({ note }: { note: string }) {
   return (

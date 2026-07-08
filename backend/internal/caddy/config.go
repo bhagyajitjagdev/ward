@@ -63,17 +63,17 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		}
 	}
 
-	var globalBlocks []string
-	blocksByService := map[string][]string{}
+	var globalBlocks []model.BlockedIP
+	blocksByService := map[string][]model.BlockedIP{}
 	for _, b := range blocks {
 		if b.CIDR == "" {
 			continue
 		}
 		switch {
 		case b.Scope == "global":
-			globalBlocks = append(globalBlocks, b.CIDR)
+			globalBlocks = append(globalBlocks, b)
 		case b.ServiceID != nil:
-			blocksByService[*b.ServiceID] = append(blocksByService[*b.ServiceID], b.CIDR)
+			blocksByService[*b.ServiceID] = append(blocksByService[*b.ServiceID], b)
 		}
 	}
 
@@ -106,18 +106,16 @@ func Generate(in Input, opt Options) ([]byte, error) {
 	}
 
 	var internalSubs, managedSubs, skipSubs []string
-	routes := make([]any, 0, len(services)+1)
-	if len(globalBlocks) > 0 {
-		routes = append(routes, denyRoute(globalBlocks)) // first → short-circuits blocked IPs
+	routes := make([]any, 0, len(services)+2)
+	for _, r := range ipRoutes(globalBlocks) {
+		routes = append(routes, r) // edge-wide IP deny + allow-only gate
+	}
+	for _, r := range geoRoutes(globalGeo, opt.GeoIPDBPath) {
+		routes = append(routes, r) // edge-wide geo block + allow-only gate
 	}
 	if len(globalRLs) > 0 {
 		// pass-through middleware: caps every IP edge-wide, then continues to the service routes
 		routes = append(routes, map[string]any{"handle": []any{rateLimitHandler(globalRLs)}})
-	}
-	if opt.GeoIPDBPath != "" {
-		for _, g := range globalGeo {
-			routes = append(routes, geoDenyRoute(g.Countries, opt.GeoIPDBPath)) // 403 for blocked countries, edge-wide
-		}
 	}
 	for _, s := range services {
 		if !s.Enabled || len(s.Upstreams) == 0 {
@@ -192,6 +190,85 @@ func denyRoute(cidrs []string) map[string]any {
 	}
 }
 
+// ipRoutes turns a scope's IP rules into up to two routes: a deny route for
+// block-mode entries, plus an allow-only gate (403 anything not listed) when any
+// allow-mode entries exist. Allow entries are unioned so multiple don't cancel out.
+func ipRoutes(blocks []model.BlockedIP) []map[string]any {
+	var deny, allow []string
+	for _, b := range blocks {
+		if b.Mode == "allow" {
+			allow = append(allow, b.CIDR)
+		} else {
+			deny = append(deny, b.CIDR)
+		}
+	}
+	var out []map[string]any
+	if len(deny) > 0 {
+		out = append(out, denyRoute(deny))
+	}
+	if len(allow) > 0 {
+		out = append(out, allowOnlyIPRoute(allow))
+	}
+	return out
+}
+
+// allowOnlyIPRoute returns 403 for any client NOT in the given IPs/CIDRs.
+func allowOnlyIPRoute(cidrs []string) map[string]any {
+	return map[string]any{
+		"match": []any{map[string]any{
+			"not": []any{map[string]any{"remote_ip": map[string]any{"ranges": cidrs}}},
+		}},
+		"handle": []any{map[string]any{
+			"handler":     "static_response",
+			"status_code": "403",
+			"body":        "blocked",
+		}},
+	}
+}
+
+// geoRoutes turns a scope's geo rules into up to two routes (block-mode deny +
+// allow-only gate). No-op when no GeoIP database is configured.
+func geoRoutes(rules []model.GeoRule, dbPath string) []map[string]any {
+	if dbPath == "" {
+		return nil
+	}
+	var deny, allow []string
+	for _, g := range rules {
+		if len(g.Countries) == 0 {
+			continue
+		}
+		if g.Mode == "allow" {
+			allow = append(allow, g.Countries...)
+		} else {
+			deny = append(deny, g.Countries...)
+		}
+	}
+	var out []map[string]any
+	if len(deny) > 0 {
+		out = append(out, geoDenyRoute(deny, dbPath))
+	}
+	if len(allow) > 0 {
+		out = append(out, geoAllowRoute(allow, dbPath))
+	}
+	return out
+}
+
+// geoAllowRoute returns 403 for any request NOT from the given countries.
+func geoAllowRoute(countries []string, dbPath string) map[string]any {
+	return map[string]any{
+		"match": []any{map[string]any{
+			"not": []any{map[string]any{
+				"maxmind_geolocation": map[string]any{"db_path": dbPath, "allow_countries": countries},
+			}},
+		}},
+		"handle": []any{map[string]any{
+			"handler":     "static_response",
+			"status_code": "403",
+			"body":        "blocked (geo)",
+		}},
+	}
+}
+
 // rateLimitHandler builds a caddy-ratelimit handler with one zone per rate limit,
 // each keyed by client IP. Over the cap → 429.
 func rateLimitHandler(rls []model.RateLimit) map[string]any {
@@ -246,16 +323,14 @@ func GenerateExclusionSecLang(seclangID, ruleID int, path, target string) string
 	return fmt.Sprintf("SecRuleRemoveById %d", ruleID)
 }
 
-// serviceRoute builds one host-matched route: [ip deny] → [geo deny] → [rate_limit?] → [waf?] → reverse_proxy.
-func serviceRoute(s model.Service, opt Options, exclusions, blockCIDRs []string, rateLimits []model.RateLimit, geoRules []model.GeoRule) map[string]any {
-	innerRoutes := make([]any, 0, 3)
-	if len(blockCIDRs) > 0 {
-		innerRoutes = append(innerRoutes, denyRoute(blockCIDRs))
+// serviceRoute builds one host-matched route: [ip rules] → [geo rules] → [rate_limit?] → [waf?] → reverse_proxy.
+func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []model.BlockedIP, rateLimits []model.RateLimit, geoRules []model.GeoRule) map[string]any {
+	innerRoutes := make([]any, 0, 4)
+	for _, r := range ipRoutes(blocks) {
+		innerRoutes = append(innerRoutes, r)
 	}
-	if opt.GeoIPDBPath != "" {
-		for _, g := range geoRules {
-			innerRoutes = append(innerRoutes, geoDenyRoute(g.Countries, opt.GeoIPDBPath))
-		}
+	for _, r := range geoRoutes(geoRules, opt.GeoIPDBPath) {
+		innerRoutes = append(innerRoutes, r)
 	}
 
 	handlers := make([]any, 0, 3)

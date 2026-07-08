@@ -7,6 +7,7 @@ import "time"
 type BlockedIP struct {
 	ID        string     `json:"id"`
 	Scope     string     `json:"scope"` // "global" | "service"
+	Mode      string     `json:"mode"`  // "block" (deny these) | "allow" (deny everything else)
 	ServiceID *string    `json:"service_id,omitempty"`
 	CIDR      string     `json:"cidr"`
 	Reason    string     `json:"reason,omitempty"`

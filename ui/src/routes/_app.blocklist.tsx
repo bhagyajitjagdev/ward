@@ -2,8 +2,9 @@ import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Ban, Trash2 } from "lucide-react"
-import { PageHeader, Mono, ago, until } from "@/components/console"
+import { Ban, Trash2, AlertTriangle } from "lucide-react"
+import { PageHeader, Mono, ago, until, ModeBadge, ModeToggle } from "@/components/console"
+import type { RuleMode } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
 import type { Block } from "@/lib/api"
 import { useServices, useServiceNames } from "@/data/queries"
@@ -51,7 +52,7 @@ function BlocklistPage() {
       <PageHeader
         eyebrow="Edge"
         title="Blocklist"
-        description="IPs and ranges denied at the edge before they reach a service — globally or per service, with an optional expiry."
+        description="Block IPs and ranges at the edge — or allow only a set — globally or per service, with an optional expiry."
         actions={<BlockDialog />}
       />
 
@@ -93,7 +94,10 @@ function BlocklistPage() {
             {blocks?.map((b) => (
               <tr key={b.id} className="group transition-colors hover:bg-muted/40">
                 <td className="px-4 py-3">
-                  <Mono className="font-medium">{b.cidr}</Mono>
+                  <div className="flex items-center gap-2">
+                    <Mono className="font-medium">{b.cidr}</Mono>
+                    <ModeBadge mode={b.mode} />
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
@@ -152,25 +156,28 @@ function BlockDialog() {
   const [cidr, setCidr] = useState("")
   const [reason, setReason] = useState("")
   const [scope, setScope] = useState("global") // "global" | <service id>
+  const [mode, setMode] = useState<RuleMode>("block")
 
   const create = useMutation({
     mutationFn: () =>
       api.createBlock({
         cidr: cidr.trim(),
         reason: reason.trim() || undefined,
+        mode,
         scope: scope === "global" ? "global" : "service",
         service_id: scope === "global" ? undefined : scope,
       }),
     onSuccess: (b: Block) => {
       qc.invalidateQueries({ queryKey: ["blocklist"] })
       qc.invalidateQueries({ queryKey: ["overview"] })
-      toast.success(`Blocked ${b.cidr}`)
+      toast.success(b.mode === "allow" ? `Allowing only ${b.cidr}` : `Blocked ${b.cidr}`)
       setOpen(false)
       setCidr("")
       setReason("")
       setScope("global")
+      setMode("block")
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't block the address"),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save the rule"),
   })
 
   return (
@@ -182,9 +189,9 @@ function BlockDialog() {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Block an address</DialogTitle>
+          <DialogTitle>Add an IP rule</DialogTitle>
           <DialogDescription>
-            Ward denies it at the edge with a 403 and reapplies the config. Enter a single IP or a CIDR range.
+            Enter a single IP or a CIDR range. Ward reapplies the edge config immediately.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -194,6 +201,17 @@ function BlockDialog() {
           }}
           className="space-y-4"
         >
+          <ModeToggle value={mode} onChange={setMode} />
+          {mode === "allow" && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                Allow-only denies <strong>every</strong> IP not on the allow-list
+                {scope === "global" ? " across the whole edge" : " for this service"}. Add each address that needs
+                access — including your own — or you'll lock everyone out.
+              </span>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="cidr">IP or CIDR</Label>
             <Input
@@ -237,7 +255,7 @@ function BlockDialog() {
               Cancel
             </Button>
             <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Blocking…" : "Block address"}
+              {create.isPending ? "Applying…" : mode === "allow" ? "Add to allow-list" : "Block address"}
             </Button>
           </DialogFooter>
         </form>
