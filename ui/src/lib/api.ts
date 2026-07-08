@@ -195,6 +195,29 @@ export interface RateLimitInput {
   window: string
 }
 
+export interface GeoRule {
+  id: string
+  scope: "global" | "service"
+  service_id?: string | null
+  countries: string[]
+  created_at: string
+}
+
+export interface GeoRuleInput {
+  scope: "global" | "service"
+  service_id?: string | null
+  countries: string[]
+}
+
+export interface GeoIPStatus {
+  present: boolean
+  source?: string
+  filename?: string
+  size?: number
+  updated_at?: string
+  dir: string
+}
+
 export interface ApiToken {
   id: string
   name: string
@@ -270,6 +293,32 @@ export const api = {
   listRateLimits: () => request<RateLimit[]>("GET", "/rate-limits"),
   createRateLimit: (input: RateLimitInput) => request<RateLimit>("POST", "/rate-limits", input),
   deleteRateLimit: (id: string) => request<void>("DELETE", `/rate-limits/${id}`),
+
+  // geo blocking
+  listGeoRules: () => request<GeoRule[]>("GET", "/geo-rules"),
+  createGeoRule: (input: GeoRuleInput) => request<GeoRule>("POST", "/geo-rules", input),
+  deleteGeoRule: (id: string) => request<void>("DELETE", `/geo-rules/${id}`),
+
+  // geoip database source
+  geoipStatus: () => request<GeoIPStatus>("GET", "/geoip"),
+  geoipDBIP: () => request<GeoIPStatus>("POST", "/geoip/dbip"),
+  geoipMaxMind: (license_key: string) => request<GeoIPStatus>("POST", "/geoip/maxmind", { license_key }),
+  geoipDelete: () => request<void>("DELETE", "/geoip"),
+  geoipUpload: async (file: File): Promise<GeoIPStatus> => {
+    const fd = new FormData()
+    fd.append("file", file)
+    const token = getToken()
+    const res = await fetch(`${BASE}/geoip/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    })
+    if (res.status === 401) setToken(null)
+    const text = await res.text()
+    const data = text ? JSON.parse(text) : null
+    if (!res.ok) throw new ApiError(res.status, (data && data.error) || res.statusText)
+    return data as GeoIPStatus
+  },
 
   // accounts
   listUsers: () => request<User[]>("GET", "/users"),

@@ -16,6 +16,7 @@ const titles: Record<string, string> = {
   "/exclusions": "Exclusions",
   "/blocklist": "Blocklist",
   "/rate-limits": "Rate Limits",
+  "/geo": "Geo Blocking",
   "/users": "Users",
   "/tokens": "API Tokens",
   "/audit": "Audit Log",

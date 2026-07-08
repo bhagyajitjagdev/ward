@@ -20,6 +20,7 @@ import { Route as AppTokensRouteImport } from './routes/_app.tokens'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppServicesRouteImport } from './routes/_app.services'
 import { Route as AppRateLimitsRouteImport } from './routes/_app.rate-limits'
+import { Route as AppGeoRouteImport } from './routes/_app.geo'
 import { Route as AppExclusionsRouteImport } from './routes/_app.exclusions'
 import { Route as AppBlocklistRouteImport } from './routes/_app.blocklist'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
@@ -80,6 +81,11 @@ const AppRateLimitsRoute = AppRateLimitsRouteImport.update({
   path: '/rate-limits',
   getParentRoute: () => AppRoute,
 } as any)
+const AppGeoRoute = AppGeoRouteImport.update({
+  id: '/geo',
+  path: '/geo',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppExclusionsRoute = AppExclusionsRouteImport.update({
   id: '/exclusions',
   path: '/exclusions',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/audit': typeof AppAuditRoute
   '/blocklist': typeof AppBlocklistRoute
   '/exclusions': typeof AppExclusionsRoute
+  '/geo': typeof AppGeoRoute
   '/rate-limits': typeof AppRateLimitsRoute
   '/services': typeof AppServicesRouteWithChildren
   '/settings': typeof AppSettingsRoute
@@ -129,6 +136,7 @@ export interface FileRoutesByTo {
   '/audit': typeof AppAuditRoute
   '/blocklist': typeof AppBlocklistRoute
   '/exclusions': typeof AppExclusionsRoute
+  '/geo': typeof AppGeoRoute
   '/rate-limits': typeof AppRateLimitsRoute
   '/settings': typeof AppSettingsRoute
   '/tokens': typeof AppTokensRoute
@@ -147,6 +155,7 @@ export interface FileRoutesById {
   '/_app/audit': typeof AppAuditRoute
   '/_app/blocklist': typeof AppBlocklistRoute
   '/_app/exclusions': typeof AppExclusionsRoute
+  '/_app/geo': typeof AppGeoRoute
   '/_app/rate-limits': typeof AppRateLimitsRoute
   '/_app/services': typeof AppServicesRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/blocklist'
     | '/exclusions'
+    | '/geo'
     | '/rate-limits'
     | '/services'
     | '/settings'
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/blocklist'
     | '/exclusions'
+    | '/geo'
     | '/rate-limits'
     | '/settings'
     | '/tokens'
@@ -200,6 +211,7 @@ export interface FileRouteTypes {
     | '/_app/audit'
     | '/_app/blocklist'
     | '/_app/exclusions'
+    | '/_app/geo'
     | '/_app/rate-limits'
     | '/_app/services'
     | '/_app/settings'
@@ -297,6 +309,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRateLimitsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/geo': {
+      id: '/_app/geo'
+      path: '/geo'
+      fullPath: '/geo'
+      preLoaderRoute: typeof AppGeoRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/exclusions': {
       id: '/_app/exclusions'
       path: '/exclusions'
@@ -353,6 +372,7 @@ interface AppRouteChildren {
   AppAuditRoute: typeof AppAuditRoute
   AppBlocklistRoute: typeof AppBlocklistRoute
   AppExclusionsRoute: typeof AppExclusionsRoute
+  AppGeoRoute: typeof AppGeoRoute
   AppRateLimitsRoute: typeof AppRateLimitsRoute
   AppServicesRoute: typeof AppServicesRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
@@ -367,6 +387,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAuditRoute: AppAuditRoute,
   AppBlocklistRoute: AppBlocklistRoute,
   AppExclusionsRoute: AppExclusionsRoute,
+  AppGeoRoute: AppGeoRoute,
   AppRateLimitsRoute: AppRateLimitsRoute,
   AppServicesRoute: AppServicesRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,

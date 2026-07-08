@@ -7,6 +7,7 @@ import {
   FilterX,
   Ban,
   Timer,
+  Globe,
   Users,
   KeyRound,
   ScrollText,
@@ -56,6 +57,7 @@ const groups = [
       { title: "Exclusions", to: "/exclusions", icon: FilterX },
       { title: "Blocklist", to: "/blocklist", icon: Ban },
       { title: "Rate Limits", to: "/rate-limits", icon: Timer },
+      { title: "Geo Blocking", to: "/geo", icon: Globe },
     ],
   },
   {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/bhagyajitjagdev/ward/backend/internal/geoip"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 )
 
@@ -47,13 +48,15 @@ func (a *Applier) Apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	opt := a.opt
+	opt.GeoIPDBPath = geoip.ActivePath(geoip.Dir()) // pick up a newly added/removed DB
 	cfg, err := Generate(Input{
 		Services:   services,
 		Exclusions: exclusions,
 		Blocks:     blocks,
 		RateLimits: rateLimits,
 		GeoRules:   geoRules,
-	}, a.opt)
+	}, opt)
 	if err != nil {
 		return err
 	}

@@ -65,6 +65,11 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /geo-rules", h.listGeoRules)
 	mux.HandleFunc("POST /geo-rules", h.createGeoRule)
 	mux.HandleFunc("DELETE /geo-rules/{id}", h.deleteGeoRule)
+	mux.HandleFunc("GET /geoip", h.geoipGet)
+	mux.HandleFunc("POST /geoip/dbip", h.geoipDBIP)
+	mux.HandleFunc("POST /geoip/maxmind", h.geoipMaxMind)
+	mux.HandleFunc("POST /geoip/upload", h.geoipUpload)
+	mux.HandleFunc("DELETE /geoip", h.geoipDelete)
 	mux.HandleFunc("GET /config-snapshots", h.listSnapshots)
 	mux.HandleFunc("POST /config-snapshots/{id}/rollback", h.rollback)
 
