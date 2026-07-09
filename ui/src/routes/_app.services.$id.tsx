@@ -36,6 +36,7 @@ function ServiceDetailPage() {
   const { data: allExclusions } = useQuery({ queryKey: ["exclusions"], queryFn: api.listExclusions })
   const { data: allBlocks } = useQuery({ queryKey: ["blocklist"], queryFn: api.listBlocklist })
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const { data: certificates } = useQuery({ queryKey: ["certificates"], queryFn: api.listCertificates })
   const exclusions = (allExclusions ?? []).filter((x) => x.service_id === id)
   const blocks = (allBlocks ?? []).filter((b) => b.service_id === id)
 
@@ -59,6 +60,7 @@ function ServiceDetailPage() {
   }
 
   const effectiveWafMode: WafMode = svc.waf_mode || settings?.waf_engine_mode || "DetectionOnly"
+  const customCert = svc.tls_mode === "custom" ? certificates?.find((c) => c.domain === svc.public_hostname) : undefined
 
   return (
     <div className="space-y-8">
@@ -104,8 +106,24 @@ function ServiceDetailPage() {
             <Field label="Public hostname" mono>
               {svc.public_hostname}
             </Field>
-            <Field label="TLS" mono>
-              {svc.tls_mode === "managed" ? "acme" : svc.tls_mode}
+            <Field label="TLS">
+              {svc.tls_mode === "custom" ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusDot tone={customCert ? "ok" : "detecting"} />
+                  <span className="font-mono !text-[13px]">custom</span>
+                  {customCert ? (
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      · expires {new Date(customCert.not_after).toISOString().slice(0, 10)}
+                    </span>
+                  ) : (
+                    <Link to="/certificates" className="font-mono text-[11px] text-amber-500 hover:underline">
+                      · no cert uploaded
+                    </Link>
+                  )}
+                </span>
+              ) : (
+                <span className="font-mono !text-[13px]">{svc.tls_mode === "managed" ? "acme" : svc.tls_mode}</span>
+              )}
             </Field>
             <Field label="Load balancing" mono>
               {svc.lb_policy}
@@ -297,6 +315,7 @@ function EditDialog({ service }: { service: Service }) {
                 <SelectContent>
                   <SelectItem value="managed">Managed · Let's Encrypt</SelectItem>
                   <SelectItem value="internal">Internal CA · self-signed</SelectItem>
+                  <SelectItem value="custom">Custom certificate · upload</SelectItem>
                   <SelectItem value="none">None · HTTP only</SelectItem>
                 </SelectContent>
               </Select>

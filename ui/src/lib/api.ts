@@ -101,6 +101,20 @@ export interface ServiceInput {
 
 export interface Settings {
   waf_engine_mode: WafMode
+  acme_email: string
+}
+
+export interface Certificate {
+  domain: string
+  subjects: string[]
+  not_after: string
+  updated_at: string
+}
+
+export interface CertificateInput {
+  domain: string
+  cert_pem: string
+  key_pem: string
 }
 
 export interface ServiceUpdate extends ServiceInput {
@@ -344,5 +358,10 @@ export const api = {
 
   // settings
   getSettings: () => request<Settings>("GET", "/settings"),
-  updateSettings: (input: Settings) => request<Settings>("PATCH", "/settings", input),
+  updateSettings: (input: Partial<Settings>) => request<Settings>("PATCH", "/settings", input),
+
+  // custom TLS certificates
+  listCertificates: () => request<Certificate[]>("GET", "/certificates"),
+  uploadCertificate: (input: CertificateInput) => request<Certificate>("POST", "/certificates", input),
+  deleteCertificate: (domain: string) => request<void>("DELETE", `/certificates/${encodeURIComponent(domain)}`),
 }

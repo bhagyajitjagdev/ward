@@ -51,12 +51,14 @@ func (a *Applier) Apply(ctx context.Context) error {
 	opt := a.opt
 	opt.GeoIPDBPath = geoip.ActivePath(geoip.Dir())               // pick up a newly added/removed DB
 	opt.WAFEngineMode = a.store.WAFEngineMode(ctx, opt.WAFEngineMode) // DB setting overrides the env/compiled default
+	opt.ACMEEmail = a.store.ACMEEmail(ctx, opt.ACMEEmail)
 	cfg, err := Generate(Input{
-		Services:   services,
-		Exclusions: exclusions,
-		Blocks:     blocks,
-		RateLimits: rateLimits,
-		GeoRules:   geoRules,
+		Services:     services,
+		Exclusions:   exclusions,
+		Blocks:       blocks,
+		RateLimits:   rateLimits,
+		GeoRules:     geoRules,
+		Certificates: ResolveCustomCerts(),
 	}, opt)
 	if err != nil {
 		return err

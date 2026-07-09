@@ -74,6 +74,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /config-snapshots/{id}/rollback", h.rollback)
 	mux.HandleFunc("GET /settings", h.getSettings)
 	mux.HandleFunc("PATCH /settings", h.updateSettings)
+	mux.HandleFunc("GET /certificates", h.listCertificates)
+	mux.HandleFunc("POST /certificates", h.uploadCertificate)
+	mux.HandleFunc("DELETE /certificates/{domain}", h.deleteCertificate)
 
 	return h.authMiddleware(mux)
 }
@@ -156,6 +159,10 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "waf_mode must be empty, 'DetectionOnly' or 'On'"})
 		return
 	}
+	if !validTLSMode(in.TLSMode) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
+		return
+	}
 
 	svc, err := h.store.CreateService(r.Context(), in)
 	if err != nil {
@@ -200,6 +207,10 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validWAFMode(in.WAFMode) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "waf_mode must be empty, 'DetectionOnly' or 'On'"})
+		return
+	}
+	if !validTLSMode(in.TLSMode) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
 		return
 	}
 

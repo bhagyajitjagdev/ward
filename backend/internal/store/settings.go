@@ -15,13 +15,25 @@ type settingRow struct {
 	Value string `bun:"value,notnull"`
 }
 
-// WAFModeKey is the settings key holding the global WAF engine-mode default.
-const WAFModeKey = "waf.engine_mode"
+// Settings keys.
+const (
+	WAFModeKey   = "waf.engine_mode" // global WAF engine-mode default
+	ACMEEmailKey = "acme.email"      // contact email for managed (Let's Encrypt) certs
+)
 
 // WAFEngineMode returns the global WAF engine-mode default, falling back to
 // `fallback` (the env/compiled default) when the setting is unset.
 func (s *Store) WAFEngineMode(ctx context.Context, fallback string) string {
 	if v, err := s.GetSetting(ctx, WAFModeKey); err == nil && v != "" {
+		return v
+	}
+	return fallback
+}
+
+// ACMEEmail returns the managed-cert contact email, falling back to `fallback`
+// (the env default) when unset.
+func (s *Store) ACMEEmail(ctx context.Context, fallback string) string {
+	if v, err := s.GetSetting(ctx, ACMEEmailKey); err == nil && v != "" {
 		return v
 	}
 	return fallback

@@ -236,6 +236,7 @@ function CreateServiceDialog() {
                 <SelectContent>
                   <SelectItem value="managed">Managed · Let's Encrypt</SelectItem>
                   <SelectItem value="internal">Internal CA · self-signed</SelectItem>
+                  <SelectItem value="custom">Custom certificate · upload</SelectItem>
                   <SelectItem value="none">None · HTTP only</SelectItem>
                 </SelectContent>
               </Select>

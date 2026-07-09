@@ -19,7 +19,6 @@ export const Route = createFileRoute("/_app/settings")({
 
 function SettingsPage() {
   const { theme, toggle } = useTheme()
-  const [email, setEmail] = useState("ops@acme.com")
   const [retention, setRetention] = useState("30")
 
   return (
@@ -29,18 +28,7 @@ function SettingsPage() {
       <div className="max-w-3xl space-y-6">
         <WafEngineSection />
 
-        <Section
-          title="TLS"
-          description="ACME account email for managed (Let's Encrypt) certificates."
-          onSave={() => toast.success("TLS settings saved")}
-        >
-          <Input
-            className="max-w-sm font-mono"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="ops@acme.com"
-          />
-        </Section>
+        <TlsSection />
 
         <Section
           title="Log retention"
@@ -123,6 +111,44 @@ function WafEngineSection() {
             </p>
           )}
         </>
+      )}
+    </Section>
+  )
+}
+
+function TlsSection() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const [draft, setDraft] = useState<string | null>(null)
+  const email = draft ?? data?.acme_email ?? ""
+  const save = useMutation({
+    mutationFn: () => api.updateSettings({ acme_email: email.trim() }),
+    onSuccess: (s) => {
+      qc.setQueryData(["settings"], s)
+      setDraft(null)
+      toast.success("ACME email saved")
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save the email"),
+  })
+
+  return (
+    <Section
+      title="TLS"
+      description="Contact email for managed (Let's Encrypt) certificates — used as the ACME account email."
+      onSave={() => {
+        if (email.trim()) save.mutate()
+      }}
+    >
+      {isLoading ? (
+        <Skeleton className="h-9 max-w-sm" />
+      ) : (
+        <Input
+          className="max-w-sm font-mono"
+          type="email"
+          value={email}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="ops@acme.com"
+        />
       )}
     </Section>
   )

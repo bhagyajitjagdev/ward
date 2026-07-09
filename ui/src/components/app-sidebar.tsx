@@ -8,6 +8,7 @@ import {
   Ban,
   Timer,
   Globe,
+  FileKey,
   Users,
   KeyRound,
   ScrollText,
@@ -58,6 +59,7 @@ const groups = [
       { title: "Blocklist", to: "/blocklist", icon: Ban },
       { title: "Rate Limits", to: "/rate-limits", icon: Timer },
       { title: "Geo Blocking", to: "/geo", icon: Globe },
+      { title: "Certificates", to: "/certificates", icon: FileKey },
     ],
   },
   {

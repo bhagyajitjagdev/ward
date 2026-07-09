@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/bhagyajitjagdev/ward/backend/internal/certs"
 	"github.com/bhagyajitjagdev/ward/backend/internal/model"
 )
 
@@ -34,13 +35,36 @@ func DefaultOptions() Options {
 	}
 }
 
+// CustomCert is a bring-your-own certificate resolved from the certs volume:
+// the PEM file paths Caddy loads (via load_files) for a tls_mode=custom host.
+type CustomCert struct {
+	Domain   string // the hostname this cert secures (its folder on the volume)
+	CertPath string
+	KeyPath  string
+}
+
+// ResolveCustomCerts loads the uploaded bring-your-own certs from the certs
+// volume into load specs for Generate. A missing/unreadable volume → none.
+func ResolveCustomCerts() []CustomCert {
+	list, err := certs.List(certs.Dir())
+	if err != nil {
+		return nil
+	}
+	out := make([]CustomCert, 0, len(list))
+	for _, c := range list {
+		out = append(out, CustomCert{Domain: c.Domain, CertPath: c.CertPath, KeyPath: c.KeyPath})
+	}
+	return out
+}
+
 // Input is the desired edge state Generate renders into a Caddy config.
 type Input struct {
-	Services   []model.Service
-	Exclusions []model.WAFExclusion
-	Blocks     []model.BlockedIP
-	RateLimits []model.RateLimit
-	GeoRules   []model.GeoRule
+	Services     []model.Service
+	Exclusions   []model.WAFExclusion
+	Blocks       []model.BlockedIP
+	RateLimits   []model.RateLimit
+	GeoRules     []model.GeoRule
+	Certificates []CustomCert
 }
 
 // Generate builds a full Caddy JSON config from the desired edge state. Global
@@ -105,7 +129,7 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		}
 	}
 
-	var internalSubs, managedSubs, skipSubs []string
+	var internalSubs, managedSubs, skipSubs, customSubs []string
 	routes := make([]any, 0, len(services)+2)
 	for _, r := range ipRoutes(globalBlocks) {
 		routes = append(routes, r) // edge-wide IP deny + allow-only gate
@@ -128,6 +152,8 @@ func Generate(in Input, opt Options) ([]byte, error) {
 			skipSubs = append(skipSubs, s.PublicHostname)
 		case "managed":
 			managedSubs = append(managedSubs, s.PublicHostname)
+		case "custom":
+			customSubs = append(customSubs, s.PublicHostname)
 		default: // "internal" or unset → local self-signed CA
 			internalSubs = append(internalSubs, s.PublicHostname)
 		}
@@ -140,8 +166,31 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		server["automatic_https"] = map[string]any{"disable": true}
 	} else {
 		server["listen"] = []string{opt.HTTPPort, opt.HTTPSPort}
+		autoHTTPS := map[string]any{}
 		if len(skipSubs) > 0 {
-			server["automatic_https"] = map[string]any{"skip": skipSubs} // HTTP-only services
+			autoHTTPS["skip"] = skipSubs // HTTP-only services: no TLS at all
+		}
+		// Bring-your-own-cert hosts: stop Caddy auto-issuing for them (skip_certificates
+		// keeps the HTTP->HTTPS redirect), and load the uploaded PEM files from the volume.
+		var loadFiles []any
+		if len(customSubs) > 0 {
+			certByHost := map[string]CustomCert{}
+			for _, c := range in.Certificates {
+				certByHost[c.Domain] = c
+			}
+			var served []string
+			for _, host := range customSubs {
+				if c, ok := certByHost[host]; ok {
+					loadFiles = append(loadFiles, map[string]any{"certificate": c.CertPath, "key": c.KeyPath})
+					served = append(served, host)
+				}
+			}
+			if len(served) > 0 {
+				autoHTTPS["skip_certificates"] = served
+			}
+		}
+		if len(autoHTTPS) > 0 {
+			server["automatic_https"] = autoHTTPS
 		}
 		var policies []any
 		if len(internalSubs) > 0 {
@@ -160,8 +209,14 @@ func Generate(in Input, opt Options) ([]byte, error) {
 				"issuers":  []any{issuer},
 			})
 		}
-		if len(policies) > 0 {
-			tlsApp = map[string]any{"automation": map[string]any{"policies": policies}}
+		if len(policies) > 0 || len(loadFiles) > 0 {
+			tlsApp = map[string]any{}
+			if len(policies) > 0 {
+				tlsApp["automation"] = map[string]any{"policies": policies}
+			}
+			if len(loadFiles) > 0 {
+				tlsApp["certificates"] = map[string]any{"load_files": loadFiles}
+			}
 		}
 	}
 

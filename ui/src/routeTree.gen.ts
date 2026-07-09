@@ -22,6 +22,7 @@ import { Route as AppServicesRouteImport } from './routes/_app.services'
 import { Route as AppRateLimitsRouteImport } from './routes/_app.rate-limits'
 import { Route as AppGeoRouteImport } from './routes/_app.geo'
 import { Route as AppExclusionsRouteImport } from './routes/_app.exclusions'
+import { Route as AppCertificatesRouteImport } from './routes/_app.certificates'
 import { Route as AppBlocklistRouteImport } from './routes/_app.blocklist'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
 import { Route as AppServicesIndexRouteImport } from './routes/_app.services.index'
@@ -91,6 +92,11 @@ const AppExclusionsRoute = AppExclusionsRouteImport.update({
   path: '/exclusions',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCertificatesRoute = AppCertificatesRouteImport.update({
+  id: '/certificates',
+  path: '/certificates',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppBlocklistRoute = AppBlocklistRouteImport.update({
   id: '/blocklist',
   path: '/blocklist',
@@ -118,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/setup': typeof SetupRoute
   '/audit': typeof AppAuditRoute
   '/blocklist': typeof AppBlocklistRoute
+  '/certificates': typeof AppCertificatesRoute
   '/exclusions': typeof AppExclusionsRoute
   '/geo': typeof AppGeoRoute
   '/rate-limits': typeof AppRateLimitsRoute
@@ -135,6 +142,7 @@ export interface FileRoutesByTo {
   '/setup': typeof SetupRoute
   '/audit': typeof AppAuditRoute
   '/blocklist': typeof AppBlocklistRoute
+  '/certificates': typeof AppCertificatesRoute
   '/exclusions': typeof AppExclusionsRoute
   '/geo': typeof AppGeoRoute
   '/rate-limits': typeof AppRateLimitsRoute
@@ -154,6 +162,7 @@ export interface FileRoutesById {
   '/setup': typeof SetupRoute
   '/_app/audit': typeof AppAuditRoute
   '/_app/blocklist': typeof AppBlocklistRoute
+  '/_app/certificates': typeof AppCertificatesRoute
   '/_app/exclusions': typeof AppExclusionsRoute
   '/_app/geo': typeof AppGeoRoute
   '/_app/rate-limits': typeof AppRateLimitsRoute
@@ -175,6 +184,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/audit'
     | '/blocklist'
+    | '/certificates'
     | '/exclusions'
     | '/geo'
     | '/rate-limits'
@@ -192,6 +202,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/audit'
     | '/blocklist'
+    | '/certificates'
     | '/exclusions'
     | '/geo'
     | '/rate-limits'
@@ -210,6 +221,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/_app/audit'
     | '/_app/blocklist'
+    | '/_app/certificates'
     | '/_app/exclusions'
     | '/_app/geo'
     | '/_app/rate-limits'
@@ -323,6 +335,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppExclusionsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/certificates': {
+      id: '/_app/certificates'
+      path: '/certificates'
+      fullPath: '/certificates'
+      preLoaderRoute: typeof AppCertificatesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/blocklist': {
       id: '/_app/blocklist'
       path: '/blocklist'
@@ -371,6 +390,7 @@ const AppServicesRouteWithChildren = AppServicesRoute._addFileChildren(
 interface AppRouteChildren {
   AppAuditRoute: typeof AppAuditRoute
   AppBlocklistRoute: typeof AppBlocklistRoute
+  AppCertificatesRoute: typeof AppCertificatesRoute
   AppExclusionsRoute: typeof AppExclusionsRoute
   AppGeoRoute: typeof AppGeoRoute
   AppRateLimitsRoute: typeof AppRateLimitsRoute
@@ -386,6 +406,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAuditRoute: AppAuditRoute,
   AppBlocklistRoute: AppBlocklistRoute,
+  AppCertificatesRoute: AppCertificatesRoute,
   AppExclusionsRoute: AppExclusionsRoute,
   AppGeoRoute: AppGeoRoute,
   AppRateLimitsRoute: AppRateLimitsRoute,
