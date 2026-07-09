@@ -130,7 +130,7 @@ func Generate(in Input, opt Options) ([]byte, error) {
 	}
 
 	var internalSubs, managedSubs, skipSubs, customSubs []string
-	routes := make([]any, 0, len(services)+2)
+	routes := make([]any, 0, len(services)*2+3)
 	for _, r := range ipRoutes(globalBlocks) {
 		routes = append(routes, r) // edge-wide IP deny + allow-only gate
 	}
@@ -141,15 +141,17 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		// pass-through middleware: caps every IP edge-wide, then continues to the service routes
 		routes = append(routes, map[string]any{"handle": []any{rateLimitHandler(globalRLs)}})
 	}
+	var redirectRoutes, svcRoutes []any
 	for _, s := range services {
 		if !s.Enabled || len(s.Upstreams) == 0 {
 			continue
 		}
 		excl := append(append([]string{}, globalExcl...), exclByService[s.ID]...)
-		routes = append(routes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID]))
+		svcRoutes = append(svcRoutes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID]))
 		switch s.TLSMode {
 		case "none":
 			skipSubs = append(skipSubs, s.PublicHostname)
+			continue // HTTP-only: no HTTPS to redirect to
 		case "managed":
 			managedSubs = append(managedSubs, s.PublicHostname)
 		case "custom":
@@ -157,7 +159,15 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		default: // "internal" or unset → local self-signed CA
 			internalSubs = append(internalSubs, s.PublicHostname)
 		}
+		// Any cert-bearing service forces HTTP -> HTTPS (a cert implies HTTPS).
+		redirectRoutes = append(redirectRoutes, httpsRedirectRoute(s.PublicHostname))
 	}
+	// Redirects fire before the service content routes; skipped in the no-auto-HTTPS
+	// (dev) path, where there's no HTTPS to redirect to.
+	if !opt.DisableAutoHTTPS {
+		routes = append(routes, redirectRoutes...)
+	}
+	routes = append(routes, svcRoutes...)
 
 	server := map[string]any{"routes": routes}
 	var tlsApp map[string]any
@@ -166,7 +176,9 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		server["automatic_https"] = map[string]any{"disable": true}
 	} else {
 		server["listen"] = []string{opt.HTTPPort, opt.HTTPSPort}
-		autoHTTPS := map[string]any{}
+		// Ward emits explicit per-host HTTP->HTTPS redirects (above), so turn off
+		// Caddy's automatic global one.
+		autoHTTPS := map[string]any{"disable_redirects": true}
 		if len(skipSubs) > 0 {
 			autoHTTPS["skip"] = skipSubs // HTTP-only services: no TLS at all
 		}
@@ -231,6 +243,22 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		"apps":  apps,
 	}
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// httpsRedirectRoute returns an HTTP-only 308 redirect to the HTTPS URL for host.
+// The scheme match lets HTTPS requests fall through to the service's own route.
+func httpsRedirectRoute(host string) map[string]any {
+	return map[string]any{
+		"match": []any{map[string]any{
+			"host":       []string{host},
+			"expression": "{http.request.scheme} == 'http'",
+		}},
+		"handle": []any{map[string]any{
+			"handler":     "static_response",
+			"status_code": "308",
+			"headers":     map[string]any{"Location": []string{"https://{http.request.host}{http.request.uri}"}},
+		}},
+	}
 }
 
 // denyRoute returns 403 for any request from the given IPs/CIDRs.

@@ -134,7 +134,7 @@ function TlsSection() {
   return (
     <Section
       title="TLS"
-      description="Contact email for managed (Let's Encrypt) certificates — used as the ACME account email."
+      description="Contact email for managed (Let's Encrypt) certificates — used as the ACME account email. Services with a certificate redirect HTTP→HTTPS automatically."
       onSave={() => {
         if (email.trim()) save.mutate()
       }}

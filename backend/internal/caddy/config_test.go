@@ -28,8 +28,8 @@ func TestGenerate(t *testing.T) {
 		t.Fatalf("generated config is not valid JSON: %v", err)
 	}
 	routes := cfg["apps"].(map[string]any)["http"].(map[string]any)["servers"].(map[string]any)["edge"].(map[string]any)["routes"].([]any)
-	if len(routes) != 2 {
-		t.Fatalf("want 2 routes (disabled + upstream-less excluded), got %d", len(routes))
+	if len(routes) != 4 {
+		t.Fatalf("want 4 routes (2 enabled services + 2 http->https redirects), got %d", len(routes))
 	}
 	s := string(out)
 	for _, want := range []string{"n8n.example.com", "harbor.example.com", "least_conn", `"admin"`, `"reverse_proxy"`} {
@@ -107,8 +107,8 @@ func TestGenerateWithBlocks(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	routes := cfg["apps"].(map[string]any)["http"].(map[string]any)["servers"].(map[string]any)["edge"].(map[string]any)["routes"].([]any)
-	if len(routes) != 2 {
-		t.Fatalf("want 2 routes (global-deny first + service), got %d", len(routes))
+	if len(routes) != 3 {
+		t.Fatalf("want 3 routes (global-deny + http->https redirect + service), got %d", len(routes))
 	}
 	firstMatch := routes[0].(map[string]any)["match"].([]any)[0].(map[string]any)
 	if _, ok := firstMatch["remote_ip"]; !ok {
@@ -135,10 +135,14 @@ func TestGenerateTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(out)
-	for _, want := range []string{`"module": "internal"`, "internal.example.com", `"module": "acme"`, "ops@example.com", `"skip"`, "plain.example.com", ":443"} {
+	for _, want := range []string{`"module": "internal"`, "internal.example.com", `"module": "acme"`, "ops@example.com", `"skip"`, "plain.example.com", ":443", `"308"`, "disable_redirects"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("TLS config missing %q", want)
 		}
+	}
+	// the none-mode host must NOT get an http->https redirect
+	if strings.Count(s, `"308"`) != 2 {
+		t.Errorf("want 2 redirects (internal + managed, not the none host), got %d", strings.Count(s, `"308"`))
 	}
 
 	// dev-disabled → no HTTPS, auto-https off
