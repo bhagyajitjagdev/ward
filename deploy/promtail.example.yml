@@ -1,0 +1,47 @@
+# Example Promtail config: ship Ward's edge access log to Loki so you get
+# long-term, searchable request logs + Grafana dashboards. Ward keeps only a few
+# days in its own DB (the Access Log screen); Loki is the durable store.
+#
+# Mount the same `waf_audit` volume this stack already uses (read-only) at /waf,
+# point POSITIONS + LOKI at your setup, and run promtail alongside the stack.
+#
+#   promtail:
+#     image: grafana/promtail:latest
+#     command: -config.file=/etc/promtail/config.yml
+#     volumes:
+#       - ./promtail.example.yml:/etc/promtail/config.yml:ro
+#       - waf_audit:/waf:ro
+#     networks: [edge]
+
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/promtail-positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push # <- your Loki push endpoint
+
+scrape_configs:
+  - job_name: ward-access
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: ward-access
+          __path__: /waf/access.json
+    pipeline_stages:
+      # Caddy writes structured JSON — parse it into fields + labels.
+      - json:
+          expressions:
+            ts: ts
+            status: status
+            method: request.method
+            host: request.host
+            uri: request.uri
+      - labels:
+          host:
+          method:
+          status:
+      - timestamp:
+          source: ts
+          format: Unix

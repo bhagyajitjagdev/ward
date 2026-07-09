@@ -26,13 +26,15 @@ services:
     depends_on: [caddy]
     environment:
       WARD_ADDR: ":8080"
-      WARD_DB: "file:/data/ward.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+      # SQLite by default; override in .env with a postgres:// DSN (see the postgres service below).
+      WARD_DB: "${WARD_DB:-file:/data/ward.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)}"
       WARD_CADDY_ADMIN: "http://caddy:2019"
       WARD_CADDY_AUTO_HTTPS: "1"
       WARD_GEOIP_DIR: "/geoip"
       WARD_CERTS_DIR: "/certs"
       WARD_WAF_AUDIT_LOG: "/waf/audit.json" # where Coraza writes (via the generated config)
       WARD_AUDIT_LOG: "/waf/audit.json" # where ward's ingester reads
+      WARD_ACCESS_LOG: "/waf/access.json" # Caddy writes + ward tails the JSON access log
       WARD_UI: "1"
       WARD_ACME_EMAIL: "${WARD_ACME_EMAIL:-}"
     volumes:
@@ -47,13 +49,29 @@ services:
       - "127.0.0.1:8080:8080"
     networks: [edge]
 
+  # Optional Postgres. Enable with `--profile postgres` and set WARD_DB in .env to
+  # postgres://ward:<pw>@postgres:5432/ward?sslmode=disable (see .env.example).
+  # (Ward retries the DB on startup, so it tolerates Postgres coming up second.)
+  postgres:
+    image: postgres:16-alpine
+    profiles: [postgres]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ward
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-ward}"
+      POSTGRES_DB: ward
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [edge]
+
 networks:
   edge:
 
 volumes:
   caddy_data:
   caddy_config:
-  ward_db: # the whole edge's source of truth — back this up
+  ward_db: # the whole edge's source of truth (SQLite mode) — back this up
+  pgdata: # postgres data (postgres mode) — back this up
   geoip:
   certs:
   waf_audit:

@@ -28,6 +28,21 @@ Create the owner account, add services (their upstreams point at **Box B**, belo
 docker compose --env-file .env pull && docker compose --env-file .env up -d
 ```
 
+## Database: SQLite or Postgres
+
+Ward picks its database from **`WARD_DB`** — no separate flag. Unset (the default) → a SQLite file on
+the `ward_db` volume. A `postgres://…` DSN → Postgres (bun's `pgdialect`; the same dual-dialect goose
+migrations run on both — verified against Postgres 16).
+
+To use Postgres: in `.env`, set `WARD_DB` + `POSTGRES_PASSWORD`, then bring it up with the profile:
+
+```sh
+docker compose --env-file .env --profile postgres up -d
+```
+
+Ward retries the DB on startup, so it's fine that Postgres comes up second. Backup unit: the `pgdata`
+volume (or `ward_db` in SQLite mode).
+
 ## The 2-box topology
 
 - **Box A** — this stack. Public `:80`/`:443`; management plane private.
@@ -67,6 +82,26 @@ curl -s "$H" -X DELETE localhost:8080/api/blocklist/<id>
 
 Last resorts, in order: edit the DB row directly in the `ward_db` volume and restart; or load a
 config into Caddy's admin API (`localhost:2019`) by hand. It's very hard to brick.
+
+## Access logs → Loki / Grafana
+
+Ward tails Caddy's structured JSON access log into its own DB, but keeps only a few days
+(Settings → Access-log retention) — enough for the in-UI **Access Log** screen. For long-term,
+searchable logs and richer dashboards, ship the same log file to Loki:
+
+1. The stack already writes the access log to `/waf/access.json` on the shared `waf_audit` volume.
+2. Run **Promtail** (or Alloy/Vector) alongside the stack, tailing that file → Loki. A starter config
+   is in [`promtail.example.yml`](promtail.example.yml) — mount `waf_audit:/waf:ro`, point it at your
+   Loki, and go.
+3. Query in Grafana, e.g.:
+   ```logql
+   {job="ward-access"} | json                          # all requests
+   {job="ward-access", status="500"}                   # server errors
+   sum(rate({job="ward-access"}[5m])) by (host)         # req/s per service
+   ```
+
+Ward and Loki read the *same* file — they don't conflict. Ward gives the at-a-glance view; Grafana
+gives the deep, long-term one.
 
 ## Notes
 
