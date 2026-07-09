@@ -3,6 +3,7 @@ import {
   Gauge,
   ShieldAlert,
   Flame,
+  Activity,
   Server,
   FilterX,
   Ban,
@@ -49,6 +50,7 @@ const groups = [
       { title: "Overview", to: "/", icon: Gauge },
       { title: "WAF Events", to: "/waf-events", icon: ShieldAlert },
       { title: "Top Triggers", to: "/top-triggers", icon: Flame },
+      { title: "Access Log", to: "/access", icon: Activity },
     ],
   },
   {

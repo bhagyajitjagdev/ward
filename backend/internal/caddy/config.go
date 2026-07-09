@@ -22,6 +22,7 @@ type Options struct {
 	AuditLogPath     string // where Coraza writes its JSON audit log
 	ACMEEmail        string // contact email for managed (Let's Encrypt) certs
 	GeoIPDBPath      string // path to the GeoIP .mmdb for the geo matcher (empty → geo blocking off)
+	AccessLogPath    string // where Caddy writes the JSON access log (empty → access logging off)
 }
 
 // DefaultOptions returns sane defaults.
@@ -170,6 +171,9 @@ func Generate(in Input, opt Options) ([]byte, error) {
 	routes = append(routes, svcRoutes...)
 
 	server := map[string]any{"routes": routes}
+	if opt.AccessLogPath != "" {
+		server["logs"] = map[string]any{} // enable access logging for this server
+	}
 	var tlsApp map[string]any
 	if opt.DisableAutoHTTPS {
 		server["listen"] = []string{opt.HTTPPort}
@@ -241,6 +245,18 @@ func Generate(in Input, opt Options) ([]byte, error) {
 	cfg := map[string]any{
 		"admin": map[string]any{"listen": opt.AdminListen},
 		"apps":  apps,
+	}
+	if opt.AccessLogPath != "" {
+		// Route access logs to a JSON file (tailed by Ward + any external pipeline);
+		// keep them out of the default (stderr) log.
+		cfg["logging"] = map[string]any{"logs": map[string]any{
+			"default": map[string]any{"exclude": []string{"http.log.access"}},
+			"access": map[string]any{
+				"writer":  map[string]any{"output": "file", "filename": opt.AccessLogPath},
+				"encoder": map[string]any{"format": "json"},
+				"include": []string{"http.log.access"},
+			},
+		}}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }

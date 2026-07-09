@@ -17,8 +17,9 @@ type settingRow struct {
 
 // Settings keys.
 const (
-	WAFModeKey   = "waf.engine_mode" // global WAF engine-mode default
-	ACMEEmailKey = "acme.email"      // contact email for managed (Let's Encrypt) certs
+	WAFModeKey         = "waf.engine_mode"       // global WAF engine-mode default
+	ACMEEmailKey       = "acme.email"            // contact email for managed (Let's Encrypt) certs
+	AccessRetentionKey = "access.retention_days" // how long to keep raw access events
 )
 
 // WAFEngineMode returns the global WAF engine-mode default, falling back to
@@ -35,6 +36,17 @@ func (s *Store) WAFEngineMode(ctx context.Context, fallback string) string {
 func (s *Store) ACMEEmail(ctx context.Context, fallback string) string {
 	if v, err := s.GetSetting(ctx, ACMEEmailKey); err == nil && v != "" {
 		return v
+	}
+	return fallback
+}
+
+// AccessRetentionDays returns how many days of raw access events to keep, falling
+// back to `fallback` when unset.
+func (s *Store) AccessRetentionDays(ctx context.Context, fallback int) int {
+	if v, err := s.GetSetting(ctx, AccessRetentionKey); err == nil && v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
 	}
 	return fallback
 }

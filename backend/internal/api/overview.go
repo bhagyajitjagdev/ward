@@ -5,14 +5,14 @@ import (
 	"time"
 )
 
-// overviewResponse is the dashboard rollup. It's computed from the WAF-detection
-// stream (waf_events) + services + blocklist — Ward has no access-log pipeline yet,
-// so there is no total-request count, only detections.
+// overviewResponse is the dashboard rollup — WAF detections + request volume
+// (access_events) + services + blocklist.
 type overviewResponse struct {
 	Services      int                 `json:"services"`
 	WAFServices   int                 `json:"waf_services"`
 	Detections24h int                 `json:"detections_24h"`
 	Blocked24h    int                 `json:"blocked_24h"`
+	Requests24h   int                 `json:"requests_24h"`
 	ActiveBlocks  int                 `json:"active_blocks"`
 	Activity      []activityBucket    `json:"activity"`
 	ByService     []serviceDetections `json:"by_service"`
@@ -22,6 +22,7 @@ type activityBucket struct {
 	Hour       time.Time `json:"hour"`
 	Detections int       `json:"detections"`
 	Blocked    int       `json:"blocked"`
+	Requests   int       `json:"requests"`
 }
 
 type serviceDetections struct {
@@ -45,6 +46,11 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	blocks, err := h.store.ListActiveBlocks(ctx)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	access, err := h.store.LeanAccessSince(ctx, base, "")
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -82,6 +88,13 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 			if e.IsInterrupted {
 				buckets[idx].Blocked++
 			}
+		}
+	}
+	for _, e := range access {
+		resp.Requests24h++
+		idx := int(e.TS.Truncate(time.Hour).Sub(base) / time.Hour)
+		if idx >= 0 && idx < 24 {
+			buckets[idx].Requests++
 		}
 	}
 	resp.Activity = buckets

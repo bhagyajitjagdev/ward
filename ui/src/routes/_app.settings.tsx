@@ -19,7 +19,6 @@ export const Route = createFileRoute("/_app/settings")({
 
 function SettingsPage() {
   const { theme, toggle } = useTheme()
-  const [retention, setRetention] = useState("30")
 
   return (
     <div className="space-y-6">
@@ -30,23 +29,7 @@ function SettingsPage() {
 
         <TlsSection />
 
-        <Section
-          title="Log retention"
-          description="How long WAF events are kept before Ward prunes them."
-          onSave={() => toast.success("Retention saved")}
-        >
-          <Select value={retention} onValueChange={setRetention}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">7 days</SelectItem>
-              <SelectItem value="30">30 days</SelectItem>
-              <SelectItem value="90">90 days</SelectItem>
-              <SelectItem value="365">1 year</SelectItem>
-            </SelectContent>
-          </Select>
-        </Section>
+        <RetentionSection />
 
         <Section title="Appearance" description="Theme for this browser.">
           <Segmented
@@ -150,6 +133,37 @@ function TlsSection() {
           placeholder="ops@acme.com"
         />
       )}
+    </Section>
+  )
+}
+
+function RetentionSection() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const days = data?.access_retention_days ?? 7
+  const save = useMutation({
+    mutationFn: (d: number) => api.updateSettings({ access_retention_days: d }),
+    onSuccess: (s) => {
+      qc.setQueryData(["settings"], s)
+      toast.success(`Access log kept ${s.access_retention_days} days`)
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save"),
+  })
+  return (
+    <Section
+      title="Access-log retention"
+      description="How long raw access events are kept in Ward for the Access Log view. Ship the log to Loki/Grafana for longer, searchable history."
+    >
+      <Select value={String(days)} onValueChange={(v) => save.mutate(Number(v))}>
+        <SelectTrigger className="w-40">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="1">1 day</SelectItem>
+          <SelectItem value="3">3 days</SelectItem>
+          <SelectItem value="7">7 days</SelectItem>
+        </SelectContent>
+      </Select>
     </Section>
   )
 }

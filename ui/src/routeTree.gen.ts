@@ -25,6 +25,7 @@ import { Route as AppExclusionsRouteImport } from './routes/_app.exclusions'
 import { Route as AppCertificatesRouteImport } from './routes/_app.certificates'
 import { Route as AppBlocklistRouteImport } from './routes/_app.blocklist'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
+import { Route as AppAccessRouteImport } from './routes/_app.access'
 import { Route as AppServicesIndexRouteImport } from './routes/_app.services.index'
 import { Route as AppServicesIdRouteImport } from './routes/_app.services.$id'
 
@@ -107,6 +108,11 @@ const AppAuditRoute = AppAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAccessRoute = AppAccessRouteImport.update({
+  id: '/access',
+  path: '/access',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppServicesIndexRoute = AppServicesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/access': typeof AppAccessRoute
   '/audit': typeof AppAuditRoute
   '/blocklist': typeof AppBlocklistRoute
   '/certificates': typeof AppCertificatesRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/access': typeof AppAccessRoute
   '/audit': typeof AppAuditRoute
   '/blocklist': typeof AppBlocklistRoute
   '/certificates': typeof AppCertificatesRoute
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/_app/access': typeof AppAccessRoute
   '/_app/audit': typeof AppAuditRoute
   '/_app/blocklist': typeof AppBlocklistRoute
   '/_app/certificates': typeof AppCertificatesRoute
@@ -182,6 +191,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/setup'
+    | '/access'
     | '/audit'
     | '/blocklist'
     | '/certificates'
@@ -200,6 +210,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/setup'
+    | '/access'
     | '/audit'
     | '/blocklist'
     | '/certificates'
@@ -219,6 +230,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/setup'
+    | '/_app/access'
     | '/_app/audit'
     | '/_app/blocklist'
     | '/_app/certificates'
@@ -356,6 +368,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAuditRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/access': {
+      id: '/_app/access'
+      path: '/access'
+      fullPath: '/access'
+      preLoaderRoute: typeof AppAccessRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/services/': {
       id: '/_app/services/'
       path: '/'
@@ -388,6 +407,7 @@ const AppServicesRouteWithChildren = AppServicesRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppAccessRoute: typeof AppAccessRoute
   AppAuditRoute: typeof AppAuditRoute
   AppBlocklistRoute: typeof AppBlocklistRoute
   AppCertificatesRoute: typeof AppCertificatesRoute
@@ -404,6 +424,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAccessRoute: AppAccessRoute,
   AppAuditRoute: AppAuditRoute,
   AppBlocklistRoute: AppBlocklistRoute,
   AppCertificatesRoute: AppCertificatesRoute,

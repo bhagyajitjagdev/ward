@@ -40,7 +40,8 @@ function OverviewPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border lg:grid-cols-5">
+        <Metric label="Requests · 24h" value={overview ? fmt.format(overview.requests_24h) : "—"} sub="through the edge" tone="armed" />
         <Metric label="Detections · 24h" value={overview ? fmt.format(overview.detections_24h) : "—"} sub="rule matches" tone="detecting" />
         <Metric label="Blocked · 24h" value={overview ? fmt.format(overview.blocked_24h) : "—"} sub="interrupted by the WAF" tone="threat" />
         <Metric label="Active IP blocks" value={overview ? String(overview.active_blocks) : "—"} sub="denied at the edge" />

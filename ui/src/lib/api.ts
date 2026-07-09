@@ -102,6 +102,7 @@ export interface ServiceInput {
 export interface Settings {
   waf_engine_mode: WafMode
   acme_email: string
+  access_retention_days: number
 }
 
 export interface Certificate {
@@ -269,9 +270,45 @@ export interface Overview {
   waf_services: number
   detections_24h: number
   blocked_24h: number
+  requests_24h: number
   active_blocks: number
-  activity: { hour: string; detections: number; blocked: number }[]
+  activity: { hour: string; detections: number; blocked: number; requests: number }[]
   by_service: { service_id: string; detections_24h: number }[]
+}
+
+export interface AccessEvent {
+  id: string
+  ts: string
+  service_id?: string | null
+  host: string
+  client_ip: string
+  method: string
+  path: string
+  query?: string
+  status: number
+  duration_ms: number
+  bytes: number
+  user_agent?: string
+}
+
+export interface AccessStats {
+  total: number
+  status: { "2xx": number; "3xx": number; "4xx": number; "5xx": number }
+  bytes: number
+  avg_ms: number
+  p95_ms: number
+  series: { bucket: string; requests: number; errors: number }[]
+  top_paths: { path: string; count: number }[]
+}
+
+export interface AccessQuery {
+  service_id?: string
+  client_ip?: string
+  method?: string
+  path?: string
+  status?: number
+  since?: string
+  limit?: number
 }
 
 export interface WafEventQuery {
@@ -306,6 +343,9 @@ export const api = {
   listWafEvents: (q: WafEventQuery = {}) => request<WafEvent[]>("GET", `/waf-events${qs(q)}`),
   topTriggers: (q: { service_id?: string; since?: string; limit?: number } = {}) =>
     request<WafTrigger[]>("GET", `/waf-events/top${qs(q)}`),
+  listAccessEvents: (q: AccessQuery = {}) => request<AccessEvent[]>("GET", `/access-events${qs(q)}`),
+  accessStats: (q: { service_id?: string; since?: string } = {}) =>
+    request<AccessStats>("GET", `/access-events/stats${qs(q)}`),
   listExclusions: () => request<WafExclusion[]>("GET", "/waf-exclusions"),
   createExclusion: (input: ExclusionInput) => request<WafExclusion>("POST", "/waf-exclusions", input),
   deleteExclusion: (id: string) => request<void>("DELETE", `/waf-exclusions/${id}`),

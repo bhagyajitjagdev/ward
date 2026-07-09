@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/bhagyajitjagdev/ward/backend/internal/access"
 	"github.com/bhagyajitjagdev/ward/backend/internal/api"
 	"github.com/bhagyajitjagdev/ward/backend/internal/caddy"
 	"github.com/bhagyajitjagdev/ward/backend/internal/geoip"
@@ -94,6 +95,17 @@ func main() {
 		go ing.Run(context.Background())
 	}
 
+	// Access-log read-path: tail Caddy's JSON access log into access_events, and
+	// prune it to the retention window (default 7 days).
+	if accessPath := os.Getenv("WARD_ACCESS_LOG"); accessPath != "" {
+		ing := access.NewIngester(st, accessPath)
+		if ms, err := strconv.Atoi(os.Getenv("WARD_ACCESS_INTERVAL_MS")); err == nil && ms > 0 {
+			ing.SetInterval(time.Duration(ms) * time.Millisecond)
+		}
+		go ing.Run(context.Background())
+		go pruneAccessLoop(context.Background(), st)
+	}
+
 	// The API lives under /api; the embedded ward-ui (when compiled in and
 	// WARD_UI != "0") serves the SPA at everything else, on the same private port.
 	root := http.NewServeMux()
@@ -129,6 +141,7 @@ func caddyOptions() caddy.Options {
 	if v := os.Getenv("WARD_ACME_EMAIL"); v != "" {
 		opt.ACMEEmail = v
 	}
+	opt.AccessLogPath = os.Getenv("WARD_ACCESS_LOG")
 	opt.GeoIPDBPath = geoip.ActivePath(geoip.Dir())
 	// Auto-HTTPS off by default in dev (no public domains → no ACME); opt in with =1.
 	opt.DisableAutoHTTPS = os.Getenv("WARD_CADDY_AUTO_HTTPS") != "1"
@@ -140,4 +153,26 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// pruneAccessLoop deletes access events past the retention window, hourly.
+func pruneAccessLoop(ctx context.Context, st *store.Store) {
+	prune := func() {
+		days := st.AccessRetentionDays(ctx, 7)
+		before := time.Now().UTC().AddDate(0, 0, -days)
+		if n, err := st.PruneAccessEvents(ctx, before); err == nil && n > 0 {
+			log.Printf("access pruner: removed %d events older than %dd", n, days)
+		}
+	}
+	prune()
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			prune()
+		}
+	}
 }

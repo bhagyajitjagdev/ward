@@ -53,6 +53,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("DELETE /services/{id}", h.deleteService)
 	mux.HandleFunc("GET /waf-events", h.listWAFEvents)
 	mux.HandleFunc("GET /waf-events/top", h.topTriggers)
+	mux.HandleFunc("GET /access-events", h.listAccessEvents)
+	mux.HandleFunc("GET /access-events/stats", h.accessStats)
 	mux.HandleFunc("GET /waf-exclusions", h.listExclusions)
 	mux.HandleFunc("POST /waf-exclusions", h.createExclusion)
 	mux.HandleFunc("DELETE /waf-exclusions/{id}", h.deleteExclusion)

@@ -13,6 +13,7 @@ const titles: Record<string, string> = {
   "/services": "Services",
   "/waf-events": "WAF Events",
   "/top-triggers": "Top Triggers",
+  "/access": "Access Log",
   "/exclusions": "Exclusions",
   "/blocklist": "Blocklist",
   "/rate-limits": "Rate Limits",
