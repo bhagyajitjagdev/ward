@@ -1,0 +1,29 @@
+# Box B — test app farm for the 2-box dogfood.
+#
+# Plain containers on ports. NO Ward components here, and NO real hostnames — Ward
+# (on Box A) maps the public service names to these ports over the mesh. Run on the
+# laptop / Box B:
+#
+#   docker compose -f box-b.apps.compose.yml up -d
+#
+# Box A reaches these at <this-host's-mesh-ip>:<published-port>.
+name: ward-boxb
+
+services:
+  # Target for service #1 — echoes request info (client IP, headers, method, path).
+  # Ideal for reverse-proxy sanity, rate-limit floods, and IP/geo allow-deny demos.
+  whoami:
+    image: traefik/whoami
+    restart: unless-stopped
+    command: --port 80 --name svc-1
+    ports:
+      - "8081:80" # -> mesh:8081
+
+  # Target for service #2 — OWASP Juice Shop, a deliberately-vulnerable app. Doubles
+  # as the WAF-tuning (wedge) target (it trips CRS rules → real false positives to
+  # scope), and something worth actually protecting once enforcement is on.
+  juiceshop:
+    image: bkimminich/juice-shop
+    restart: unless-stopped
+    ports:
+      - "8082:3000" # -> mesh:8082

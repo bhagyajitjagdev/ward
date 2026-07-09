@@ -70,6 +70,12 @@ func TestGenerateWithExclusions(t *testing.T) {
 	if strings.Contains(s, "999999") {
 		t.Error("non-active (draft) exclusion should not be composed")
 	}
+	// Exclusions must precede the CRS rules include: ctl:ruleRemoveById only
+	// suppresses a rule that has not run yet, and Coraza evaluates in directive
+	// order within a phase. (A no-op otherwise — the real-box wedge bug.)
+	if excl, crs := strings.Index(s, "ruleRemoveTargetById=942100"), strings.Index(s, "Include @owasp_crs/*.conf"); excl < 0 || crs < 0 || excl > crs {
+		t.Errorf("exclusions must come before the CRS include (exclusion idx %d, CRS include idx %d)", excl, crs)
+	}
 }
 
 func TestGenerateExclusionSecLang(t *testing.T) {

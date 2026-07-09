@@ -8,6 +8,11 @@ services:
   caddy:
     image: ghcr.io/bhagyajitjagdev/ward-caddy:${WARD_TAG:-latest}
     restart: unless-stopped
+    environment:
+      # Caddy's admin API must bind the container network (not just localhost) so the
+      # ward control plane can reach it to push config. It is still never *published*
+      # to the host — see the deliberate omission of :2019 from ports below.
+      CADDY_ADMIN: "0.0.0.0:2019"
     ports:
       - "80:80"
       - "443:443"

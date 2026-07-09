@@ -385,14 +385,20 @@ func rateLimitHandler(rls []model.RateLimit) map[string]any {
 	}
 }
 
-// geoDenyRoute returns 403 for requests from the given countries, via the
-// maxmind_geolocation matcher against the configured GeoIP database.
+// geoDenyRoute returns 403 for requests from the given countries.
+//
+// NOTE: the porech maxmind_geolocation matcher *matches* a request whose country
+// is in allow_countries, and does NOT match one in deny_countries. So to BLOCK a
+// set of countries with a 403-on-match route we list them under allow_countries —
+// the matcher then fires precisely for those countries. Using deny_countries here
+// inverts the logic (it would 403 everyone *except* the listed countries), which
+// is the mirror of geoAllowRoute's `not { allow_countries }`.
 func geoDenyRoute(countries []string, dbPath string) map[string]any {
 	return map[string]any{
 		"match": []any{map[string]any{
 			"maxmind_geolocation": map[string]any{
-				"db_path":        dbPath,
-				"deny_countries": countries,
+				"db_path":         dbPath,
+				"allow_countries": countries,
 			},
 		}},
 		"handle": []any{map[string]any{
@@ -476,9 +482,14 @@ func wafHandler(opt Options, mode string, exclusions []string) map[string]any {
 	}
 }
 
-// buildDirectives is the per-service SecLang: bundled CRS (read-only) → engine
-// mode → audit logging → Ward-managed exclusions (appended AFTER the CRS). mode is
-// the service's effective engine mode (its override, else the global default).
+// buildDirectives is the per-service SecLang: CRS setup → Ward-managed exclusions
+// → the CRS rules → engine mode → audit logging. mode is the service's effective
+// engine mode (its override, else the global default).
+//
+// Exclusions are emitted BEFORE the CRS rules include (the CRS "before-CRS" slot):
+// a ctl:ruleRemoveById only suppresses a rule that has not run yet, and Coraza
+// evaluates rules in directive order within a phase. Appending them after the
+// include (as before) made every scoped exclusion a no-op.
 func buildDirectives(opt Options, mode string, exclusions []string) string {
 	if mode != "On" && mode != "DetectionOnly" {
 		mode = "DetectionOnly"
@@ -490,14 +501,16 @@ func buildDirectives(opt Options, mode string, exclusions []string) string {
 	lines := []string{
 		"Include @coraza.conf-recommended",
 		"Include @crs-setup.conf.example",
+	}
+	lines = append(lines, exclusions...) // before the CRS rules, so ruleRemoveById wins
+	lines = append(lines,
 		"Include @owasp_crs/*.conf",
-		"SecRuleEngine " + mode,
+		"SecRuleEngine "+mode,
 		"SecAuditEngine On",
-		"SecAuditLog " + audit,
+		"SecAuditLog "+audit,
 		"SecAuditLogType Serial",
 		"SecAuditLogFormat JSON",
 		"SecAuditLogParts ABIJDEFHZ",
-	}
-	lines = append(lines, exclusions...)
+	)
 	return strings.Join(lines, "\n")
 }
