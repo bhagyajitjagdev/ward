@@ -1,11 +1,12 @@
 import { useRef, useState } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { FileKey, Trash2, Upload, AlertTriangle } from "lucide-react"
 import { PageHeader, StatusDot, Mono, ago } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
 import type { Certificate } from "@/lib/api"
+import { useServices } from "@/data/queries"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -43,6 +44,7 @@ function readAsText(f: File): Promise<string> {
 function CertificatesPage() {
   const qc = useQueryClient()
   const { data: certs, isLoading, error } = useQuery({ queryKey: ["certificates"], queryFn: api.listCertificates })
+  const { data: services } = useServices()
   const remove = useMutation({
     mutationFn: (domain: string) => api.deleteCertificate(domain),
     onSuccess: () => {
@@ -66,6 +68,7 @@ function CertificatesPage() {
           <thead>
             <tr className="border-b bg-muted/30 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
               <th className="px-4 py-2.5 font-medium">Domain</th>
+              <th className="px-4 py-2.5 font-medium">Used by</th>
               <th className="px-4 py-2.5 font-medium">Covers</th>
               <th className="px-4 py-2.5 font-medium">Expires</th>
               <th className="px-4 py-2.5 font-medium">Uploaded</th>
@@ -75,21 +78,21 @@ function CertificatesPage() {
           <tbody className="divide-y">
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-3.5">
+                <td colSpan={6} className="px-4 py-3.5">
                   <Skeleton className="h-6 w-full" />
                 </td>
               </tr>
             )}
             {error && (
               <tr>
-                <td colSpan={5} className="py-12 text-center text-sm text-red-500">
+                <td colSpan={6} className="py-12 text-center text-sm text-red-500">
                   Couldn't load certificates.
                 </td>
               </tr>
             )}
             {certs?.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-16 text-center text-sm text-muted-foreground">
+                <td colSpan={6} className="py-16 text-center text-sm text-muted-foreground">
                   No custom certificates. Upload one to serve it on a “Custom certificate” service.
                 </td>
               </tr>
@@ -97,10 +100,28 @@ function CertificatesPage() {
             {certs?.map((c) => {
               const d = daysLeft(c.not_after)
               const tone = d < 0 ? "threat" : d < 30 ? "detecting" : "ok"
+              const usedBy = services?.find((s) => s.public_hostname === c.domain && s.tls_mode === "custom")
               return (
                 <tr key={c.domain} className="group transition-colors hover:bg-muted/40">
                   <td className="px-4 py-3">
                     <Mono className="font-medium">{c.domain}</Mono>
+                  </td>
+                  <td className="px-4 py-3">
+                    {usedBy ? (
+                      <Link
+                        to="/services/$id"
+                        params={{ id: usedBy.id }}
+                        className="inline-flex items-center gap-1.5 hover:underline"
+                      >
+                        <StatusDot tone="ok" />
+                        <span className="text-xs">{usedBy.name}</span>
+                      </Link>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                        <StatusDot tone="idle" />
+                        <span className="text-xs">unused</span>
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
