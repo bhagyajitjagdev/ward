@@ -20,10 +20,10 @@ export default defineConfig({
     proxy: {
       // dev: forward API calls to the Go backend (override with VITE_PROXY_TARGET).
       // Trailing slash matters: '/api/' must NOT match SPA routes like '/api-tokens'.
+      // No rewrite — the backend serves the API under /api directly.
       '/api/': {
         target: process.env.VITE_PROXY_TARGET || 'http://localhost:8080',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ''),
       },
     },
   },

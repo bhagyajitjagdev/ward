@@ -1,0 +1,59 @@
+# Ward — full edge stack (Box A of the 2-box topology).
+#   docker compose --env-file .env pull
+#   docker compose --env-file .env up -d
+name: ward
+
+services:
+  # The edge / data plane. Public :80/:443. Admin :2019 is deliberately NOT published.
+  caddy:
+    image: ghcr.io/bhagyajitjagdev/ward-caddy:${WARD_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data # ACME + internal-CA certs — persist!
+      - caddy_config:/config
+      - geoip:/geoip:ro # GeoIP db (ward writes, caddy reads)
+      - certs:/certs:ro # custom TLS certs (ward writes, caddy reads)
+      - waf_audit:/waf # Coraza JSON audit log (caddy writes, ward reads)
+    networks: [edge]
+
+  # The control plane. API + embedded ward-ui. PRIVATE — never expose publicly.
+  ward:
+    image: ghcr.io/bhagyajitjagdev/ward:${WARD_TAG:-latest}
+    restart: unless-stopped
+    depends_on: [caddy]
+    environment:
+      WARD_ADDR: ":8080"
+      WARD_DB: "file:/data/ward.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+      WARD_CADDY_ADMIN: "http://caddy:2019"
+      WARD_CADDY_AUTO_HTTPS: "1"
+      WARD_GEOIP_DIR: "/geoip"
+      WARD_CERTS_DIR: "/certs"
+      WARD_WAF_AUDIT_LOG: "/waf/audit.json" # where Coraza writes (via the generated config)
+      WARD_AUDIT_LOG: "/waf/audit.json" # where ward's ingester reads
+      WARD_UI: "1"
+      WARD_ACME_EMAIL: "${WARD_ACME_EMAIL:-}"
+    volumes:
+      - ward_db:/data
+      - geoip:/geoip
+      - certs:/certs
+      - waf_audit:/waf:ro
+    ports:
+      # Management plane — PRIVATE. Bound to localhost; reach it via an SSH tunnel
+      #   ssh -L 8080:localhost:8080 <box-a>
+      # or change the bind to a mesh/VPN interface IP.
+      - "127.0.0.1:8080:8080"
+    networks: [edge]
+
+networks:
+  edge:
+
+volumes:
+  caddy_data:
+  caddy_config:
+  ward_db: # the whole edge's source of truth — back this up
+  geoip:
+  certs:
+  waf_audit:

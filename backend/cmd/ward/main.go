@@ -18,6 +18,7 @@ import (
 	"github.com/bhagyajitjagdev/ward/backend/internal/geoip"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 	"github.com/bhagyajitjagdev/ward/backend/internal/waf"
+	"github.com/bhagyajitjagdev/ward/backend/internal/web"
 )
 
 func main() {
@@ -55,12 +56,14 @@ func main() {
 		}
 		opt := caddyOptions()
 		opt.WAFEngineMode = st.WAFEngineMode(ctx, opt.WAFEngineMode)
+		opt.ACMEEmail = st.ACMEEmail(ctx, opt.ACMEEmail)
 		cfg, err := caddy.Generate(caddy.Input{
-			Services:   services,
-			Exclusions: exclusions,
-			Blocks:     blocks,
-			RateLimits: rateLimits,
-			GeoRules:   geoRules,
+			Services:     services,
+			Exclusions:   exclusions,
+			Blocks:       blocks,
+			RateLimits:   rateLimits,
+			GeoRules:     geoRules,
+			Certificates: caddy.ResolveCustomCerts(),
 		}, opt)
 		if err != nil {
 			log.Fatal(err)
@@ -91,12 +94,22 @@ func main() {
 		go ing.Run(context.Background())
 	}
 
+	// The API lives under /api; the embedded ward-ui (when compiled in and
+	// WARD_UI != "0") serves the SPA at everything else, on the same private port.
+	root := http.NewServeMux()
+	root.Handle("/api/", http.StripPrefix("/api", api.New(st, applier).Routes()))
+	if os.Getenv("WARD_UI") != "0" {
+		if assets, ok := web.Assets(); ok {
+			root.Handle("/", web.SPAHandler(assets))
+			log.Printf("serving embedded ward-ui at /")
+		}
+	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.New(st, applier).Routes(),
+		Handler:           root,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	log.Printf("ward listening on %s", addr)
+	log.Printf("ward listening on %s (API under /api)", addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}

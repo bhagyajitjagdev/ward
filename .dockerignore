@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/dist
+ui/.tanstack
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/.geoip-*
+scratchpad
