@@ -28,6 +28,25 @@ export const Route = createFileRoute("/_app/certificates")({
 const DAY = 86_400_000
 
 // Days until expiry (negative = already expired).
+// Mirrors the backend certs.SANMatches: a subject (CN/SAN) secures host, incl. a
+// single-label wildcard (*.example.com → a.example.com). Used to mark a cert "in use"
+// when a custom-mode service's hostname is covered by the cert's SAN, not just its
+// storage-folder domain.
+function sanMatches(host: string, san: string): boolean {
+  host = host.toLowerCase().trim()
+  san = san.toLowerCase().trim()
+  if (!host || !san) return false
+  if (san === host) return true
+  if (san.startsWith("*.")) {
+    const suffix = san.slice(1) // ".example.com"
+    if (host.endsWith(suffix)) {
+      const label = host.slice(0, host.length - suffix.length)
+      return label.length > 0 && !label.includes(".")
+    }
+  }
+  return false
+}
+
 function daysLeft(iso: string): number {
   return Math.floor((new Date(iso).getTime() - Date.now()) / DAY)
 }
@@ -100,22 +119,31 @@ function CertificatesPage() {
             {certs?.map((c) => {
               const d = daysLeft(c.not_after)
               const tone = d < 0 ? "threat" : d < 30 ? "detecting" : "ok"
-              const usedBy = services?.find((s) => s.public_hostname === c.domain && s.tls_mode === "custom")
+              // In use if any custom-mode service's hostname is covered by the cert's SAN
+              // (matches config-gen's SAN loading — not just the storage-folder domain).
+              const usedByServices = (services ?? []).filter(
+                (s) => s.tls_mode === "custom" && (c.subjects ?? []).some((san) => sanMatches(s.public_hostname, san)),
+              )
               return (
                 <tr key={c.domain} className="group transition-colors hover:bg-muted/40">
                   <td className="px-4 py-3">
                     <Mono className="font-medium">{c.domain}</Mono>
                   </td>
                   <td className="px-4 py-3">
-                    {usedBy ? (
-                      <Link
-                        to="/services/$id"
-                        params={{ id: usedBy.id }}
-                        className="inline-flex items-center gap-1.5 hover:underline"
-                      >
-                        <StatusDot tone="ok" />
-                        <span className="text-xs">{usedBy.name}</span>
-                      </Link>
+                    {usedByServices.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        {usedByServices.map((s) => (
+                          <Link
+                            key={s.id}
+                            to="/services/$id"
+                            params={{ id: s.id }}
+                            className="inline-flex items-center gap-1.5 hover:underline"
+                          >
+                            <StatusDot tone="ok" />
+                            <span className="text-xs">{s.name}</span>
+                          </Link>
+                        ))}
+                      </div>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                         <StatusDot tone="idle" />
