@@ -122,8 +122,8 @@ func (h *Handler) accessStats(w http.ResponseWriter, r *http.Request) {
 	for _, k := range keys {
 		resp.Series = append(resp.Series, *buckets[k])
 	}
-	if tp, err := h.store.TopAccessPaths(r.Context(), since, serviceID, 10); err == nil {
-		resp.TopPaths = tp
+	if tp, err := h.store.TopAccessPaths(r.Context(), since, serviceID, 10); err == nil && tp != nil {
+		resp.TopPaths = tp // keep the [] init on empty — a nil slice marshals to JSON null and crashes the UI
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

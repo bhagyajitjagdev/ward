@@ -28,6 +28,7 @@ function TopTriggersPage() {
   const { data: triggers, isLoading, error } = useQuery({
     queryKey: ["top-triggers"],
     queryFn: () => api.topTriggers({ limit: 20 }),
+    refetchInterval: 5000, // live monitor
   })
 
   const max = triggers?.[0]?.hits ?? 1

@@ -11,6 +11,11 @@
 # Local caches / scratch
 .cache/
 
+# Local TLS certs/keys (self-signed test material — may carry a real test hostname; never commit)
+*.pem
+*.key
+*.crt
+
 # Frontend (ward-ui, later)
 node_modules/
 dist/

@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export const Route = createFileRoute("/login")({
-  beforeLoad: () => {
+  beforeLoad: async () => {
     if (getToken()) throw redirect({ to: "/" })
+    // First run (no owner yet) → send them to setup instead of a dead login form.
+    if ((await api.setupState()).needs_setup) throw redirect({ to: "/setup" })
   },
   component: LoginPage,
 })

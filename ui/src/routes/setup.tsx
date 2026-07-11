@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export const Route = createFileRoute("/setup")({
-  beforeLoad: () => {
+  beforeLoad: async () => {
     if (getToken()) throw redirect({ to: "/" })
+    // Setup is a one-time action — if an owner already exists, don't show the form.
+    if (!(await api.setupState()).needs_setup) throw redirect({ to: "/login" })
   },
   component: SetupPage,
 })

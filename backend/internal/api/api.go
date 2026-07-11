@@ -32,6 +32,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", h.healthz)
 
 	// auth + accounts
+	mux.HandleFunc("GET /auth/state", h.authState)
 	mux.HandleFunc("POST /auth/setup", h.setup)
 	mux.HandleFunc("POST /auth/login", h.login)
 	mux.HandleFunc("POST /auth/logout", h.logout)

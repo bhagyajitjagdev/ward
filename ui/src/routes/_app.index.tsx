@@ -14,10 +14,10 @@ export const Route = createFileRoute("/_app/")({
 })
 
 function OverviewPage() {
-  const { data: overview } = useQuery({ queryKey: ["overview"], queryFn: api.overview })
+  const { data: overview } = useQuery({ queryKey: ["overview"], queryFn: api.overview, refetchInterval: 5000 })
   const { data: services } = useServices()
-  const { data: triggers } = useQuery({ queryKey: ["top-triggers", 5], queryFn: () => api.topTriggers({ limit: 5 }) })
-  const { data: events } = useQuery({ queryKey: ["waf-events", 6], queryFn: () => api.listWafEvents({ limit: 6 }) })
+  const { data: triggers } = useQuery({ queryKey: ["top-triggers", 5], queryFn: () => api.topTriggers({ limit: 5 }), refetchInterval: 5000 })
+  const { data: events } = useQuery({ queryKey: ["waf-events", 6], queryFn: () => api.listWafEvents({ limit: 6 }), refetchInterval: 5000 })
 
   const detByService = useMemo(() => {
     const m: Record<string, number> = {}

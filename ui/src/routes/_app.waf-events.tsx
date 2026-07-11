@@ -4,8 +4,9 @@ import { Search, ChevronRight, FilterX, Ban } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PageHeader, SeverityBadge, Mono, ago, normalizeSeverity } from "@/components/console"
 import type { Severity } from "@/components/console"
-import { useQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+import { api, ApiError } from "@/lib/api"
 import type { WafEvent } from "@/lib/api"
 import { useServices, useServiceNames } from "@/data/queries"
 import { Input } from "@/components/ui/input"
@@ -35,6 +36,7 @@ function WafEventsPage() {
   const { data: events, isLoading, error } = useQuery({
     queryKey: ["waf-events"],
     queryFn: () => api.listWafEvents({ limit: 200 }),
+    refetchInterval: 5000, // live monitor: poll every 5s (react-query auto-pauses when the tab is hidden)
   })
 
   const filtered = useMemo(
@@ -174,7 +176,7 @@ function WafEventsPage() {
                     {e.service_id ? (names[e.service_id] ?? "—") : "—"}
                   </Mono>
                 </td>
-                <td className="pr-3">
+                <td className="pr-3 align-middle">
                   <ChevronRight className="size-4 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
                 </td>
               </tr>
@@ -197,6 +199,37 @@ function EventSheet({
   serviceName?: string
   onClose: () => void
 }) {
+  const qc = useQueryClient()
+  const exclude = useMutation({
+    mutationFn: (e: WafEvent) =>
+      api.createExclusion({
+        rule_id: e.rule_id,
+        scope: e.service_id ? "service" : "global",
+        service_id: e.service_id ?? undefined,
+        path: e.path || undefined,
+        target: e.matched_target || undefined,
+      }),
+    onSuccess: (x) => {
+      qc.invalidateQueries({ queryKey: ["exclusions"] })
+      qc.invalidateQueries({ queryKey: ["waf-events"] })
+      qc.invalidateQueries({ queryKey: ["top-triggers"] })
+      toast.success("Exclusion created", { description: `${x.rule_id} silenced on ${x.path || "this service"}` })
+      onClose()
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't create the exclusion"),
+  })
+  const block = useMutation({
+    mutationFn: (e: WafEvent) =>
+      api.createBlock({ cidr: `${e.client_ip}/32`, scope: "global", mode: "block", reason: `WAF event — rule ${e.rule_id}` }),
+    onSuccess: (_x, e) => {
+      qc.invalidateQueries({ queryKey: ["blocklist"] })
+      toast.success("IP blocked", { description: `${e.client_ip} blocked at the edge` })
+      onClose()
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't block the IP"),
+  })
+  const busy = exclude.isPending || block.isPending
+
   return (
     <Sheet open={!!event} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full gap-0 sm:max-w-md">
@@ -225,11 +258,11 @@ function EventSheet({
               <Field label="When">{new Date(event.ts).toLocaleString()}</Field>
             </div>
             <div className="mt-auto flex gap-2 border-t p-4">
-              <Button className="flex-1">
-                <FilterX className="size-4" /> Create exclusion
+              <Button className="flex-1" disabled={busy} onClick={() => exclude.mutate(event)} data-testid="event-create-exclusion">
+                <FilterX className="size-4" /> {exclude.isPending ? "Creating…" : "Create exclusion"}
               </Button>
-              <Button variant="outline" className="flex-1">
-                <Ban className="size-4" /> Block IP
+              <Button variant="outline" className="flex-1" disabled={busy} onClick={() => block.mutate(event)} data-testid="event-block-ip">
+                <Ban className="size-4" /> {block.isPending ? "Blocking…" : "Block IP"}
               </Button>
             </div>
           </>

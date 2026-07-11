@@ -30,16 +30,19 @@ function fmtMs(ms: number): string {
 function AccessLogPage() {
   const [service, setService] = useState("all")
   const [path, setPath] = useState("")
+  const [clientIp, setClientIp] = useState("")
   const [statusClazz, setStatusClazz] = useState("all") // all | 2 | 3 | 4 | 5
 
   const svcParam = service === "all" ? undefined : service
   const { data: stats } = useQuery({
     queryKey: ["access-stats", svcParam],
     queryFn: () => api.accessStats({ service_id: svcParam }),
+    refetchInterval: 5000, // live monitor
   })
   const { data: events, isLoading, error } = useQuery({
-    queryKey: ["access-events", svcParam, path],
-    queryFn: () => api.listAccessEvents({ service_id: svcParam, path: path || undefined, limit: 200 }),
+    queryKey: ["access-events", svcParam, path, clientIp],
+    queryFn: () => api.listAccessEvents({ service_id: svcParam, path: path || undefined, client_ip: clientIp || undefined, limit: 200 }),
+    refetchInterval: 5000, // live monitor
   })
 
   const shown = (events ?? []).filter((e) => statusClazz === "all" || String(e.status)[0] === statusClazz)
@@ -69,9 +72,9 @@ function AccessLogPage() {
         <section className="rounded-xl border bg-card">
           <PanelHead title="Top paths" hint="24h" />
           <div className="p-2">
-            {stats && stats.top_paths.length > 0 ? (
+            {stats && (stats.top_paths ?? []).length > 0 ? (
               <ul className="divide-y">
-                {stats.top_paths.slice(0, 8).map((p) => (
+                {(stats.top_paths ?? []).slice(0, 8).map((p) => (
                   <li key={p.path} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                     <Mono dim className="min-w-0 flex-1 truncate !text-xs">
                       {p.path}
@@ -106,6 +109,13 @@ function AccessLogPage() {
           value={path}
           onChange={(e) => setPath(e.target.value)}
           placeholder="path prefix, e.g. /api"
+        />
+        <Input
+          className="max-w-[180px] font-mono"
+          value={clientIp}
+          onChange={(e) => setClientIp(e.target.value)}
+          placeholder="client IP"
+          data-testid="access-ip-filter"
         />
       </div>
 

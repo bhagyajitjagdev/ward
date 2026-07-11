@@ -324,6 +324,7 @@ export const api = {
   // auth
   setup: (username: string, password: string) =>
     request<LoginResponse>("POST", "/auth/setup", { username, password }),
+  setupState: () => request<{ needs_setup: boolean }>("GET", "/auth/state"),
   login: (username: string, password: string) =>
     request<LoginResponse>("POST", "/auth/login", { username, password }),
   logout: () => request<void>("POST", "/auth/logout"),

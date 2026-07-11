@@ -49,6 +49,8 @@ func isPublic(method, path string) bool {
 		return true
 	case method == http.MethodPost && path == "/auth/login":
 		return true
+	case method == http.MethodGet && path == "/auth/state":
+		return true
 	}
 	return false
 }
@@ -110,6 +112,17 @@ func (h *Handler) setup(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = h.store.WriteAudit(r.Context(), user.Username, "auth.setup", "user:"+user.ID, "owner account created")
 	writeJSON(w, http.StatusCreated, loginResponse(tok, exp, user))
+}
+
+// authState reports whether first-run setup is still needed (no users yet). Public
+// so the UI can route between /setup and /login before anyone is authenticated.
+func (h *Handler) authState(w http.ResponseWriter, r *http.Request) {
+	n, err := h.store.CountUsers(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"needs_setup": n == 0})
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
