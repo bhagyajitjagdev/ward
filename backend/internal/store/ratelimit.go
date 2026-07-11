@@ -52,7 +52,7 @@ func (s *Store) UpdateRateLimit(ctx context.Context, id string, in model.RateLim
 		MaxEvents: in.MaxEvents, Window: in.Window,
 	}
 	res, err := s.DB.NewUpdate().Model(&row).
-		Column("scope", "service_id", "max_events", "window").
+		Column("scope", "service_id", "max_events", "window_dur").
 		Where("id = ?", id).Exec(ctx)
 	if err != nil {
 		return model.RateLimit{}, false, err
