@@ -35,8 +35,8 @@ func (h *Handler) uploadCertificate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if in.Domain == "" || in.CertPEM == "" || in.KeyPEM == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain, cert_pem and key_pem are required"})
+	if in.CertPEM == "" || in.KeyPEM == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cert_pem and key_pem are required"})
 		return
 	}
 	// certs.Save validates the pair + that it covers the domain, then writes to the volume.

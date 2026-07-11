@@ -63,11 +63,19 @@ func safeDomain(d string) (string, error) {
 // Save validates the cert/key pair and that it covers the domain, then atomically
 // writes the PEMs to <dir>/custom/<domain>/. Overwrites any existing cert there.
 func Save(dir, domain string, certPEM, keyPEM []byte) (Cert, error) {
-	d, err := safeDomain(domain)
+	leaf, err := validatePair(certPEM, keyPEM)
 	if err != nil {
 		return Cert{}, err
 	}
-	leaf, err := validatePair(certPEM, keyPEM)
+	if strings.TrimSpace(domain) == "" {
+		// Auto-name from the cert (CN, else first SAN). The name is only a storage
+		// label — the cert's SAN is what actually secures hosts.
+		domain = leaf.Subject.CommonName
+		if domain == "" && len(leaf.DNSNames) > 0 {
+			domain = leaf.DNSNames[0]
+		}
+	}
+	d, err := safeDomain(domain)
 	if err != nil {
 		return Cert{}, err
 	}

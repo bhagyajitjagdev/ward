@@ -86,7 +86,7 @@ function CertificatesPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/30 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2.5 font-medium">Domain</th>
+              <th className="px-4 py-2.5 font-medium">Name</th>
               <th className="px-4 py-2.5 font-medium">Used by</th>
               <th className="px-4 py-2.5 font-medium">Covers</th>
               <th className="px-4 py-2.5 font-medium">Expires</th>
@@ -223,7 +223,7 @@ function UploadDialog() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't upload the certificate"),
   })
 
-  const ready = domain.trim() && certFile && keyFile
+  const ready = certFile && keyFile
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -236,8 +236,8 @@ function UploadDialog() {
         <DialogHeader>
           <DialogTitle>Upload a certificate</DialogTitle>
           <DialogDescription>
-            PEM cert + private key for one hostname. Ward validates the pair covers the domain, stores it on the certs
-            volume, and serves it on any “Custom certificate” service for that host.
+            PEM cert + private key. Ward stores it on the certs volume and serves it on any “Custom certificate”
+            service whose hostname is in the cert's SAN — so one upload covers every host the certificate lists.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -248,15 +248,19 @@ function UploadDialog() {
           className="space-y-4"
         >
           <div className="space-y-2">
-            <Label htmlFor="cert-domain">Domain</Label>
+            <Label htmlFor="cert-domain">
+              Name <span className="text-muted-foreground">(optional)</span>
+            </Label>
             <Input
               id="cert-domain"
               className="font-mono"
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
-              placeholder="api.acme.com"
+              placeholder="auto from the certificate"
             />
-            <p className="text-xs text-muted-foreground">The hostname this cert secures — match the service's public hostname.</p>
+            <p className="text-xs text-muted-foreground">
+              Just a label. Leave blank to name it after the certificate. What it actually secures is its SAN — see “Covers”.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <PemPicker
