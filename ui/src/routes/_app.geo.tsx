@@ -1,8 +1,8 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Globe, Trash2, AlertTriangle, Upload, Download, KeyRound } from "lucide-react"
+import { Globe, Trash2, Pencil, AlertTriangle, Upload, Download, KeyRound } from "lucide-react"
 import { PageHeader, StatusDot, Mono, ago, ModeBadge, ModeToggle } from "@/components/console"
 import type { RuleMode } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
@@ -36,16 +36,22 @@ function fmtBytes(n?: number): string {
 }
 
 function GeoPage() {
+  const [dialog, setDialog] = useState<{ open: boolean; editing: GeoRule | null }>({ open: false, editing: null })
   return (
     <div className="space-y-8">
       <PageHeader
         eyebrow="Edge"
         title="Geo Blocking"
         description="Block or allow traffic by country — globally or per service. Needs a GeoIP database, which you can bring however you like."
-        actions={<AddRuleDialog />}
+        actions={
+          <Button onClick={() => setDialog({ open: true, editing: null })}>
+            <Globe className="size-4" /> Add rule
+          </Button>
+        }
       />
       <GeoIPPanel />
-      <RulesTable />
+      <RulesTable onEdit={(g) => setDialog({ open: true, editing: g })} />
+      <RuleDialog open={dialog.open} editing={dialog.editing} onOpenChange={(o) => setDialog((d) => ({ ...d, open: o }))} />
     </div>
   )
 }
@@ -189,7 +195,7 @@ function MaxMindDialog({ onDone }: { onDone: () => void }) {
   )
 }
 
-function RulesTable() {
+function RulesTable({ onEdit }: { onEdit: (g: GeoRule) => void }) {
   const qc = useQueryClient()
   const names = useServiceNames()
   const { data: rules, isLoading, error } = useQuery({ queryKey: ["geo-rules"], queryFn: api.listGeoRules })
@@ -266,16 +272,27 @@ function RulesTable() {
                 </Mono>
               </td>
               <td className="pr-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 text-muted-foreground opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-                  aria-label="Remove rule"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(g.id)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+                <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-muted-foreground hover:text-foreground"
+                    aria-label="Edit rule"
+                    onClick={() => onEdit(g)}
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-muted-foreground hover:text-red-500"
+                    aria-label="Remove rule"
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate(g.id)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
               </td>
             </tr>
           ))}
@@ -333,51 +350,55 @@ function CountryPicker({ value, onChange }: { value: string[]; onChange: (v: str
   )
 }
 
-function AddRuleDialog() {
+function RuleDialog({ editing, open, onOpenChange }: { editing: GeoRule | null; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient()
   const { data: services } = useServices()
-  const [open, setOpen] = useState(false)
   const [scope, setScope] = useState("global") // "global" | <service id>
   const [countries, setCountries] = useState<string[]>([])
   const [mode, setMode] = useState<RuleMode>("block")
 
-  const create = useMutation({
-    mutationFn: () =>
-      api.createGeoRule({
+  useEffect(() => {
+    if (!open) return
+    setScope(editing?.scope === "service" ? (editing.service_id ?? "global") : "global")
+    setCountries(editing?.countries ?? [])
+    setMode((editing?.mode as RuleMode) ?? "block")
+  }, [open, editing])
+
+  const save = useMutation({
+    mutationFn: () => {
+      const input = {
         mode,
-        scope: scope === "global" ? "global" : "service",
+        scope: (scope === "global" ? "global" : "service") as "global" | "service",
         service_id: scope === "global" ? undefined : scope,
         countries,
-      }),
+      }
+      return editing ? api.updateGeoRule(editing.id, input) : api.createGeoRule(input)
+    },
     onSuccess: (g: GeoRule) => {
       qc.invalidateQueries({ queryKey: ["geo-rules"] })
       toast.success(
-        g.mode === "allow" ? `Allowing only ${g.countries.join(", ")}` : `Blocking ${g.countries.join(", ")}`,
+        editing
+          ? `Updated ${g.countries.join(", ")}`
+          : g.mode === "allow"
+            ? `Allowing only ${g.countries.join(", ")}`
+            : `Blocking ${g.countries.join(", ")}`,
       )
-      setOpen(false)
-      setScope("global")
-      setCountries([])
-      setMode("block")
+      onOpenChange(false)
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't add the rule"),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save the rule"),
   })
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <Globe className="size-4" /> Add rule
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add a geo rule</DialogTitle>
+          <DialogTitle>{editing ? "Edit geo rule" : "Add a geo rule"}</DialogTitle>
           <DialogDescription>A 403 at the edge, by country, before requests reach the service.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            create.mutate()
+            save.mutate()
           }}
           className="space-y-4"
         >
@@ -413,11 +434,11 @@ function AddRuleDialog() {
             <CountryPicker value={countries} onChange={setCountries} />
           </div>
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={create.isPending || countries.length === 0}>
-              {create.isPending ? "Adding…" : mode === "allow" ? "Allow only these" : "Block"}
+            <Button type="submit" disabled={save.isPending || countries.length === 0}>
+              {save.isPending ? "Saving…" : editing ? "Save changes" : mode === "allow" ? "Allow only these" : "Block"}
             </Button>
           </DialogFooter>
         </form>

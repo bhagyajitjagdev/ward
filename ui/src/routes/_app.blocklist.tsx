@@ -1,8 +1,8 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Ban, Trash2, AlertTriangle } from "lucide-react"
+import { Ban, Trash2, Pencil, AlertTriangle } from "lucide-react"
 import { PageHeader, Mono, ago, until, ModeBadge, ModeToggle } from "@/components/console"
 import type { RuleMode } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
@@ -19,7 +19,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -46,6 +45,7 @@ function BlocklistPage() {
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't unblock"),
   })
+  const [dialog, setDialog] = useState<{ open: boolean; editing: Block | null }>({ open: false, editing: null })
 
   return (
     <div className="space-y-6">
@@ -53,7 +53,11 @@ function BlocklistPage() {
         eyebrow="Edge"
         title="Blocklist"
         description="Block IPs and ranges at the edge — or allow only a set — globally or per service, with an optional expiry."
-        actions={<BlockDialog />}
+        actions={
+          <Button onClick={() => setDialog({ open: true, editing: null })}>
+            <Ban className="size-4" /> Block IP
+          </Button>
+        }
       />
 
       <div className="overflow-hidden rounded-xl border">
@@ -129,67 +133,79 @@ function BlocklistPage() {
                   )}
                 </td>
                 <td className="pr-3">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 text-muted-foreground opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-                    aria-label="Unblock"
-                    disabled={remove.isPending}
-                    onClick={() => remove.mutate(b.id)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
+                  <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-foreground"
+                      aria-label="Edit rule"
+                      onClick={() => setDialog({ open: true, editing: b })}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-red-500"
+                      aria-label="Unblock"
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate(b.id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <BlockDialog open={dialog.open} editing={dialog.editing} onOpenChange={(o) => setDialog((d) => ({ ...d, open: o }))} />
     </div>
   )
 }
 
-function BlockDialog() {
+function BlockDialog({ editing, open, onOpenChange }: { editing: Block | null; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient()
   const { data: services } = useServices()
-  const [open, setOpen] = useState(false)
   const [cidr, setCidr] = useState("")
   const [reason, setReason] = useState("")
   const [scope, setScope] = useState("global") // "global" | <service id>
   const [mode, setMode] = useState<RuleMode>("block")
 
-  const create = useMutation({
-    mutationFn: () =>
-      api.createBlock({
+  useEffect(() => {
+    if (!open) return
+    setCidr(editing?.cidr ?? "")
+    setReason(editing?.reason ?? "")
+    setScope(editing?.scope === "service" ? (editing.service_id ?? "global") : "global")
+    setMode((editing?.mode as RuleMode) ?? "block")
+  }, [open, editing])
+
+  const save = useMutation({
+    mutationFn: () => {
+      const input = {
         cidr: cidr.trim(),
         reason: reason.trim() || undefined,
         mode,
-        scope: scope === "global" ? "global" : "service",
+        scope: (scope === "global" ? "global" : "service") as "global" | "service",
         service_id: scope === "global" ? undefined : scope,
-      }),
+      }
+      return editing ? api.updateBlock(editing.id, input) : api.createBlock(input)
+    },
     onSuccess: (b: Block) => {
       qc.invalidateQueries({ queryKey: ["blocklist"] })
       qc.invalidateQueries({ queryKey: ["overview"] })
-      toast.success(b.mode === "allow" ? `Allowing only ${b.cidr}` : `Blocked ${b.cidr}`)
-      setOpen(false)
-      setCidr("")
-      setReason("")
-      setScope("global")
-      setMode("block")
+      toast.success(editing ? `Updated ${b.cidr}` : b.mode === "allow" ? `Allowing only ${b.cidr}` : `Blocked ${b.cidr}`)
+      onOpenChange(false)
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save the rule"),
   })
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <Ban className="size-4" /> Block IP
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add an IP rule</DialogTitle>
+          <DialogTitle>{editing ? "Edit IP rule" : "Add an IP rule"}</DialogTitle>
           <DialogDescription>
             Enter a single IP or a CIDR range. Ward reapplies the edge config immediately.
           </DialogDescription>
@@ -197,7 +213,7 @@ function BlockDialog() {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            create.mutate()
+            save.mutate()
           }}
           className="space-y-4"
         >
@@ -251,11 +267,11 @@ function BlockDialog() {
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Applying…" : mode === "allow" ? "Add to allow-list" : "Block address"}
+            <Button type="submit" disabled={save.isPending}>
+              {save.isPending ? "Applying…" : editing ? "Save changes" : mode === "allow" ? "Add to allow-list" : "Block address"}
             </Button>
           </DialogFooter>
         </form>

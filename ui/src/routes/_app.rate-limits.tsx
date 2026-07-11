@@ -1,8 +1,8 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Gauge, Trash2 } from "lucide-react"
+import { Gauge, Trash2, Pencil } from "lucide-react"
 import { PageHeader, Mono, ago } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
 import type { RateLimit } from "@/lib/api"
@@ -18,7 +18,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -38,6 +37,7 @@ function RateLimitsPage() {
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't remove the rate limit"),
   })
+  const [dialog, setDialog] = useState<{ open: boolean; editing: RateLimit | null }>({ open: false, editing: null })
 
   return (
     <div className="space-y-6">
@@ -45,7 +45,11 @@ function RateLimitsPage() {
         eyebrow="Edge"
         title="Rate Limits"
         description="Cap requests per client IP — globally across the edge, or per service. Over the cap gets a 429."
-        actions={<AddDialog />}
+        actions={
+          <Button onClick={() => setDialog({ open: true, editing: null })}>
+            <Gauge className="size-4" /> Add limit
+          </Button>
+        }
       />
 
       <div className="overflow-hidden rounded-xl border">
@@ -104,63 +108,75 @@ function RateLimitsPage() {
                   </Mono>
                 </td>
                 <td className="pr-3">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 text-muted-foreground opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-                    aria-label="Remove rate limit"
-                    disabled={remove.isPending}
-                    onClick={() => remove.mutate(rl.id)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
+                  <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-foreground"
+                      aria-label="Edit rate limit"
+                      onClick={() => setDialog({ open: true, editing: rl })}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-red-500"
+                      aria-label="Remove rate limit"
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate(rl.id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <AddDialog open={dialog.open} editing={dialog.editing} onOpenChange={(o) => setDialog((d) => ({ ...d, open: o }))} />
     </div>
   )
 }
 
-function AddDialog() {
+function AddDialog({ editing, open, onOpenChange }: { editing: RateLimit | null; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient()
   const { data: services } = useServices()
-  const [open, setOpen] = useState(false)
   const [scope, setScope] = useState("global") // "global" | <service id>
   const [maxEvents, setMaxEvents] = useState("100")
   const [window, setWindow] = useState("1m")
 
-  const create = useMutation({
-    mutationFn: () =>
-      api.createRateLimit({
-        scope: scope === "global" ? "global" : "service",
+  useEffect(() => {
+    if (!open) return
+    setScope(editing?.scope === "service" ? (editing.service_id ?? "global") : "global")
+    setMaxEvents(editing ? String(editing.max_events) : "100")
+    setWindow(editing?.window ?? "1m")
+  }, [open, editing])
+
+  const save = useMutation({
+    mutationFn: () => {
+      const input = {
+        scope: (scope === "global" ? "global" : "service") as "global" | "service",
         service_id: scope === "global" ? undefined : scope,
         max_events: Number(maxEvents) || 0,
         window: window.trim(),
-      }),
+      }
+      return editing ? api.updateRateLimit(editing.id, input) : api.createRateLimit(input)
+    },
     onSuccess: (rl: RateLimit) => {
       qc.invalidateQueries({ queryKey: ["rate-limits"] })
-      toast.success(`Rate limit added — ${rl.max_events}/${rl.window} per IP`)
-      setOpen(false)
-      setScope("global")
-      setMaxEvents("100")
-      setWindow("1m")
+      toast.success(editing ? `Updated — ${rl.max_events}/${rl.window}` : `Rate limit added — ${rl.max_events}/${rl.window} per IP`)
+      onOpenChange(false)
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't add the rate limit"),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save the rate limit"),
   })
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <Gauge className="size-4" /> Add limit
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add rate limit</DialogTitle>
+          <DialogTitle>{editing ? "Edit rate limit" : "Add rate limit"}</DialogTitle>
           <DialogDescription>
             Ward applies a per-IP cap at the edge. A client over the cap gets a 429 until the window rolls.
           </DialogDescription>
@@ -168,7 +184,7 @@ function AddDialog() {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            create.mutate()
+            save.mutate()
           }}
           className="space-y-4"
         >
@@ -215,11 +231,11 @@ function AddDialog() {
             Window is a duration — <Mono>10s</Mono>, <Mono>1m</Mono>, <Mono>1h</Mono>. Counted per client IP.
           </p>
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Adding…" : "Add rate limit"}
+            <Button type="submit" disabled={save.isPending}>
+              {save.isPending ? "Saving…" : editing ? "Save changes" : "Add rate limit"}
             </Button>
           </DialogFooter>
         </form>
