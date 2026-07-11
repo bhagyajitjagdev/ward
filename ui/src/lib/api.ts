@@ -103,6 +103,7 @@ export interface Settings {
   waf_engine_mode: WafMode
   acme_email: string
   access_retention_days: number
+  crs_version?: string // read-only: OWASP CRS version the running edge reported
 }
 
 export interface Certificate {
@@ -321,6 +322,9 @@ export interface WafEventQuery {
 }
 
 export const api = {
+  // meta
+  getVersion: () => request<{ version: string }>("GET", "/version"),
+
   // auth
   setup: (username: string, password: string) =>
     request<LoginResponse>("POST", "/auth/setup", { username, password }),

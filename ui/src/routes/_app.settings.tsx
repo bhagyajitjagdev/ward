@@ -27,6 +27,8 @@ function SettingsPage() {
       <div className="max-w-3xl space-y-6">
         <WafEngineSection />
 
+        <RulesetSection />
+
         <TlsSection />
 
         <RetentionSection />
@@ -94,6 +96,28 @@ function WafEngineSection() {
             </p>
           )}
         </>
+      )}
+    </Section>
+  )
+}
+
+function RulesetSection() {
+  const { data } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const crs = data?.crs_version
+  const label = crs ? crs.replace(/^OWASP_CRS\//, "OWASP CRS ") : null
+  return (
+    <Section
+      title="WAF ruleset"
+      description="The OWASP Core Rule Set is compiled into the edge image — update it by pulling a newer Ward release, not a separate rules download."
+    >
+      {label ? (
+        <span className="inline-flex w-fit items-center rounded-md border bg-muted/40 px-2 py-1 font-mono text-xs">
+          {label}
+        </span>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          The running version appears here once the WAF logs its first detection.
+        </p>
       )}
     </Section>
   )

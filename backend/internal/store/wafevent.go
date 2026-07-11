@@ -123,6 +123,25 @@ func (s *Store) ListWAFEvents(ctx context.Context, f WAFEventFilter) ([]model.WA
 	return out, nil
 }
 
+// LatestCRSVersion returns the OWASP CRS version reported in the most recent
+// detection ("" if no events carry one yet). The ruleset is compiled into the
+// ward-caddy image, so this reflects what the running edge actually enforces —
+// the honest answer to "which rules am I on?" even after an image upgrade.
+func (s *Store) LatestCRSVersion(ctx context.Context) string {
+	var v string
+	err := s.DB.NewSelect().
+		TableExpr("waf_events").
+		ColumnExpr("crs_version").
+		Where("crs_version IS NOT NULL AND crs_version != ''").
+		Order("ts DESC").
+		Limit(1).
+		Scan(ctx, &v)
+	if err != nil {
+		return ""
+	}
+	return v
+}
+
 // LeanWAFEvent is a minimal projection of a waf_events row for dashboard aggregation.
 type LeanWAFEvent struct {
 	TS             time.Time `bun:"ts"`

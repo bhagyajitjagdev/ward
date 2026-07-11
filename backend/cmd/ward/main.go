@@ -22,7 +22,13 @@ import (
 	"github.com/bhagyajitjagdev/ward/backend/internal/web"
 )
 
+// version is the Ward build version, injected at build time via
+// -ldflags "-X main.version=…" (see backend/Dockerfile). "dev" for local builds.
+// The sidebar shows it and checks GitHub (client-side) for a newer release.
+var version = "dev"
+
 func main() {
+	api.Version = version
 	dsn := env("WARD_DB", "file:ward.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
 	addr := env("WARD_ADDR", ":8080")
 

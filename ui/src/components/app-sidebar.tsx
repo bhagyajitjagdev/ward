@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
 import {
   Gauge,
   ShieldAlert,
@@ -17,6 +18,7 @@ import {
   ShieldCheck,
   LogOut,
   ChevronsUpDown,
+  ArrowUpCircle,
 } from "lucide-react"
 import {
   Sidebar,
@@ -42,6 +44,8 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { StatusDot } from "@/components/console"
 import { useLogout, useMe } from "@/lib/auth"
+import { api } from "@/lib/api"
+import { fetchLatestRelease, isNewerRelease, WARD_RELEASES_URL } from "@/lib/version"
 
 const groups = [
   {
@@ -130,6 +134,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t">
+        <VersionBadge />
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
@@ -171,5 +176,44 @@ export function AppSidebar() {
 
       <SidebarRail />
     </Sidebar>
+  )
+}
+
+// VersionBadge shows the running Ward build and, when a newer GitHub release exists,
+// an "Update available" link. The check runs in the browser (see @/lib/version): it
+// works when the box is offline but the browser isn't, and never phones home from the
+// edge. Offline / no release / rate-limited → just the version.
+function VersionBadge() {
+  const { data: v } = useQuery({ queryKey: ["ward-version"], queryFn: api.getVersion, staleTime: Infinity })
+  const { data: latest } = useQuery({
+    queryKey: ["ward-latest-release"],
+    queryFn: fetchLatestRelease,
+    staleTime: 60 * 60 * 1000, // an hour — don't hammer GitHub
+    retry: false,
+  })
+  const current = v?.version
+  const update = isNewerRelease(latest, current)
+
+  if (update) {
+    return (
+      <a
+        href={WARD_RELEASES_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="mx-1 flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-amber-600 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
+        title={`Ward ${current} → ${latest}`}
+      >
+        <span className="flex items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-wider">
+          <ArrowUpCircle className="size-3.5" /> Update available
+        </span>
+        <span className="font-mono text-[10px] text-amber-600/70 dark:text-amber-400/70">{latest}</span>
+      </a>
+    )
+  }
+  return (
+    <div className="mx-1 flex items-center gap-1.5 px-1.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">
+      <span>Ward</span>
+      <span className="normal-case tracking-normal">{current ?? "—"}</span>
+    </div>
   )
 }

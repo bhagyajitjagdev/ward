@@ -6,6 +6,7 @@ import { FileKey, Trash2, Upload, AlertTriangle } from "lucide-react"
 import { PageHeader, StatusDot, Mono, ago } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
 import type { Certificate } from "@/lib/api"
+import { sanMatches } from "@/lib/certs"
 import { useServices } from "@/data/queries"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,25 +29,6 @@ export const Route = createFileRoute("/_app/certificates")({
 const DAY = 86_400_000
 
 // Days until expiry (negative = already expired).
-// Mirrors the backend certs.SANMatches: a subject (CN/SAN) secures host, incl. a
-// single-label wildcard (*.example.com → a.example.com). Used to mark a cert "in use"
-// when a custom-mode service's hostname is covered by the cert's SAN, not just its
-// storage-folder domain.
-function sanMatches(host: string, san: string): boolean {
-  host = host.toLowerCase().trim()
-  san = san.toLowerCase().trim()
-  if (!host || !san) return false
-  if (san === host) return true
-  if (san.startsWith("*.")) {
-    const suffix = san.slice(1) // ".example.com"
-    if (host.endsWith(suffix)) {
-      const label = host.slice(0, host.length - suffix.length)
-      return label.length > 0 && !label.includes(".")
-    }
-  }
-  return false
-}
-
 function daysLeft(iso: string): number {
   return Math.floor((new Date(iso).getTime() - Date.now()) / DAY)
 }

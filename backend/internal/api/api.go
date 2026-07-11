@@ -16,6 +16,10 @@ import (
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 )
 
+// Version is the Ward build version, set from main (ldflags-injected). Surfaced at
+// GET /version for the UI's sidebar version badge. "dev" for local builds.
+var Version = "dev"
+
 // Handler wires HTTP routes to the store and the Caddy applier.
 type Handler struct {
 	store   *store.Store
@@ -31,6 +35,7 @@ func New(s *store.Store, applier *caddy.Applier) *Handler {
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.healthz)
+	mux.HandleFunc("GET /version", h.version)
 
 	// auth + accounts
 	mux.HandleFunc("GET /auth/state", h.authState)
@@ -131,6 +136,12 @@ func (h *Handler) topTriggers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, triggers)
+}
+
+// version reports the running Ward build. The UI compares it against GitHub's
+// latest release (client-side) to show an "update available" hint.
+func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": Version})
 }
 
 func (h *Handler) healthz(w http.ResponseWriter, r *http.Request) {

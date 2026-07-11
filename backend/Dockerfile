@@ -11,12 +11,13 @@ RUN npm run build
 
 # 2. Build the Go binary with the UI embedded (CGO off → static).
 FROM golang:1.25 AS build
+ARG VERSION=dev
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 COPY --from=ui /ui/dist ./internal/web/dist
-RUN CGO_ENABLED=0 go build -tags embed_ui -ldflags="-s -w" -o /ward ./cmd/ward
+RUN CGO_ENABLED=0 go build -tags embed_ui -ldflags="-s -w -X main.version=${VERSION}" -o /ward ./cmd/ward
 
 # 3. Runtime. Runs as root so it can write the shared volumes (db/geoip/certs);
 #    non-root hardening (entrypoint chown + gosu) is a documented follow-up.

@@ -13,6 +13,7 @@ type settingsDTO struct {
 	WAFEngineMode       string `json:"waf_engine_mode"`       // "DetectionOnly" | "On" — the global default
 	ACMEEmail           string `json:"acme_email"`            // contact email for managed (Let's Encrypt) certs
 	AccessRetentionDays int    `json:"access_retention_days"` // days of raw access events to keep
+	CRSVersion          string `json:"crs_version"`           // read-only: OWASP CRS version the edge reported (from detections)
 }
 
 // validWAFMode reports whether m is a valid engine mode. Empty is valid only for a
@@ -26,6 +27,7 @@ func (h *Handler) currentSettings(r *http.Request) settingsDTO {
 		WAFEngineMode:       h.store.WAFEngineMode(r.Context(), "DetectionOnly"),
 		ACMEEmail:           h.store.ACMEEmail(r.Context(), ""),
 		AccessRetentionDays: h.store.AccessRetentionDays(r.Context(), 7),
+		CRSVersion:          h.store.LatestCRSVersion(r.Context()),
 	}
 }
 

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { ArrowLeft, Pencil, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { certForHost } from "@/lib/certs"
 import { PageHeader, StatusDot, SeverityBadge, Mono, ago, normalizeSeverity } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
 import type { Service, WafMode } from "@/lib/api"
@@ -60,7 +61,8 @@ function ServiceDetailPage() {
   }
 
   const effectiveWafMode: WafMode = svc.waf_mode || settings?.waf_engine_mode || "DetectionOnly"
-  const customCert = svc.tls_mode === "custom" ? certificates?.find((c) => c.domain === svc.public_hostname) : undefined
+  // Match by SAN, not the storage-folder name — a cert named sv1 also serves sv2 if sv2 is in its SAN.
+  const customCert = svc.tls_mode === "custom" ? certForHost(certificates, svc.public_hostname) : undefined
 
   return (
     <div className="space-y-8">
