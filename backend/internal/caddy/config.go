@@ -39,7 +39,8 @@ func DefaultOptions() Options {
 // CustomCert is a bring-your-own certificate resolved from the certs volume:
 // the PEM file paths Caddy loads (via load_files) for a tls_mode=custom host.
 type CustomCert struct {
-	Domain   string // the hostname this cert secures (its folder on the volume)
+	Domain   string   // the cert's upload label / storage folder
+	Subjects []string // CN + SANs — the hosts this cert actually secures
 	CertPath string
 	KeyPath  string
 }
@@ -53,9 +54,23 @@ func ResolveCustomCerts() []CustomCert {
 	}
 	out := make([]CustomCert, 0, len(list))
 	for _, c := range list {
-		out = append(out, CustomCert{Domain: c.Domain, CertPath: c.CertPath, KeyPath: c.KeyPath})
+		out = append(out, CustomCert{Domain: c.Domain, Subjects: c.Subjects, CertPath: c.CertPath, KeyPath: c.KeyPath})
 	}
 	return out
+}
+
+// certForHost returns the uploaded cert whose SAN covers host (wildcard-aware), or
+// nil. One multi-SAN / wildcard cert therefore serves every host it lists — no need
+// to re-upload it per service.
+func certForHost(cc []CustomCert, host string) *CustomCert {
+	for i := range cc {
+		for _, s := range cc[i].Subjects {
+			if certs.SANMatches(host, s) {
+				return &cc[i]
+			}
+		}
+	}
+	return nil
 }
 
 // Input is the desired edge state Generate renders into a Caddy config.
@@ -190,16 +205,18 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		// keeps the HTTP->HTTPS redirect), and load the uploaded PEM files from the volume.
 		var loadFiles []any
 		if len(customSubs) > 0 {
-			certByHost := map[string]CustomCert{}
-			for _, c := range in.Certificates {
-				certByHost[c.Domain] = c
-			}
+			loadedPaths := map[string]bool{} // a multi-SAN cert covers many hosts — load it once
 			var served []string
 			for _, host := range customSubs {
-				if c, ok := certByHost[host]; ok {
-					loadFiles = append(loadFiles, map[string]any{"certificate": c.CertPath, "key": c.KeyPath})
-					served = append(served, host)
+				c := certForHost(in.Certificates, host)
+				if c == nil {
+					continue
 				}
+				if !loadedPaths[c.CertPath] {
+					loadFiles = append(loadFiles, map[string]any{"certificate": c.CertPath, "key": c.KeyPath})
+					loadedPaths[c.CertPath] = true
+				}
+				served = append(served, host)
 			}
 			if len(served) > 0 {
 				autoHTTPS["skip_certificates"] = served
@@ -469,6 +486,17 @@ func reverseProxyHandler(s model.Service) map[string]any {
 	if s.LBPolicy != "" && s.LBPolicy != "round_robin" {
 		h["load_balancing"] = map[string]any{
 			"selection_policy": map[string]any{"policy": s.LBPolicy},
+		}
+	}
+	if len(ups) > 1 {
+		// Passive health checks: pull a replica out of rotation after repeated
+		// failures so load-balanced traffic skips a dead/erroring upstream.
+		h["health_checks"] = map[string]any{
+			"passive": map[string]any{
+				"fail_duration":    "30s",
+				"max_fails":        3,
+				"unhealthy_status": []any{500, 502, 503, 504},
+			},
 		}
 	}
 	return h

@@ -52,6 +52,33 @@ func (s *Store) CreateGeoRule(ctx context.Context, in model.GeoRule) (model.GeoR
 	return row.toModel(), nil
 }
 
+// UpdateGeoRule replaces a geo rule's editable fields (id/created_at preserved).
+// Reports whether one was found.
+func (s *Store) UpdateGeoRule(ctx context.Context, id string, in model.GeoRule) (model.GeoRule, bool, error) {
+	cs, err := json.Marshal(orEmpty(in.Countries))
+	if err != nil {
+		return model.GeoRule{}, false, err
+	}
+	row := geoRuleRow{
+		ID: id, Scope: orDefault(in.Scope, "global"), Mode: orDefault(in.Mode, "block"),
+		ServiceID: in.ServiceID, Countries: string(cs),
+	}
+	res, err := s.DB.NewUpdate().Model(&row).
+		Column("scope", "mode", "service_id", "countries").
+		Where("id = ?", id).Exec(ctx)
+	if err != nil {
+		return model.GeoRule{}, false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.GeoRule{}, false, nil
+	}
+	var out geoRuleRow
+	if err := s.DB.NewSelect().Model(&out).Where("id = ?", id).Scan(ctx); err != nil {
+		return model.GeoRule{}, false, err
+	}
+	return out.toModel(), true, nil
+}
+
 // ListGeoRules returns all geo rules, newest first.
 func (s *Store) ListGeoRules(ctx context.Context) ([]model.GeoRule, error) {
 	var rows []geoRuleRow

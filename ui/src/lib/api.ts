@@ -354,16 +354,19 @@ export const api = {
   // blocklist
   listBlocklist: () => request<Block[]>("GET", "/blocklist"),
   createBlock: (input: BlockInput) => request<Block>("POST", "/blocklist", input),
+  updateBlock: (id: string, input: BlockInput) => request<Block>("PATCH", `/blocklist/${id}`, input),
   deleteBlock: (id: string) => request<void>("DELETE", `/blocklist/${id}`),
 
   // rate limits
   listRateLimits: () => request<RateLimit[]>("GET", "/rate-limits"),
   createRateLimit: (input: RateLimitInput) => request<RateLimit>("POST", "/rate-limits", input),
+  updateRateLimit: (id: string, input: RateLimitInput) => request<RateLimit>("PATCH", `/rate-limits/${id}`, input),
   deleteRateLimit: (id: string) => request<void>("DELETE", `/rate-limits/${id}`),
 
   // geo blocking
   listGeoRules: () => request<GeoRule[]>("GET", "/geo-rules"),
   createGeoRule: (input: GeoRuleInput) => request<GeoRule>("POST", "/geo-rules", input),
+  updateGeoRule: (id: string, input: GeoRuleInput) => request<GeoRule>("PATCH", `/geo-rules/${id}`, input),
   deleteGeoRule: (id: string) => request<void>("DELETE", `/geo-rules/${id}`),
 
   // geoip database source

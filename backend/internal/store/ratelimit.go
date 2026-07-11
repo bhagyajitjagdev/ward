@@ -44,6 +44,29 @@ func (s *Store) CreateRateLimit(ctx context.Context, in model.RateLimit) (model.
 	return row.toModel(), nil
 }
 
+// UpdateRateLimit replaces a rate limit's editable fields (id/created_at preserved).
+// Reports whether one was found.
+func (s *Store) UpdateRateLimit(ctx context.Context, id string, in model.RateLimit) (model.RateLimit, bool, error) {
+	row := rateLimitRow{
+		ID: id, Scope: orDefault(in.Scope, "global"), ServiceID: in.ServiceID,
+		MaxEvents: in.MaxEvents, Window: in.Window,
+	}
+	res, err := s.DB.NewUpdate().Model(&row).
+		Column("scope", "service_id", "max_events", "window").
+		Where("id = ?", id).Exec(ctx)
+	if err != nil {
+		return model.RateLimit{}, false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.RateLimit{}, false, nil
+	}
+	var out rateLimitRow
+	if err := s.DB.NewSelect().Model(&out).Where("id = ?", id).Scan(ctx); err != nil {
+		return model.RateLimit{}, false, err
+	}
+	return out.toModel(), true, nil
+}
+
 // ListRateLimits returns all rate limits, newest first.
 func (s *Store) ListRateLimits(ctx context.Context) ([]model.RateLimit, error) {
 	var rows []rateLimitRow

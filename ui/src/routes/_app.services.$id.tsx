@@ -304,6 +304,9 @@ function EditDialog({ service }: { service: Service }) {
           <div className="space-y-2">
             <Label htmlFor="e-upstreams">Upstreams</Label>
             <Input id="e-upstreams" className="font-mono" value={upstreams} onChange={(e) => setUpstreams(e.target.value)} />
+            <p className="text-xs text-muted-foreground">
+              host:port, comma-separated. Multiple upstreams are <strong>load-balanced replicas of the same app</strong> — not different apps.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">

@@ -167,6 +167,44 @@ func subjectsOf(leaf *x509.Certificate) []string {
 	return out
 }
 
+// SANMatches reports whether a certificate subject (CN or SAN entry) secures host,
+// honoring a single-label wildcard (e.g. *.example.com secures a.example.com but not
+// b.a.example.com).
+func SANMatches(host, san string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	san = strings.ToLower(strings.TrimSpace(san))
+	if host == "" || san == "" {
+		return false
+	}
+	if san == host {
+		return true
+	}
+	if strings.HasPrefix(san, "*.") {
+		suffix := san[1:] // ".example.com"
+		if strings.HasSuffix(host, suffix) {
+			label := host[:len(host)-len(suffix)]
+			return label != "" && !strings.Contains(label, ".")
+		}
+	}
+	return false
+}
+
+// Covers reports whether any uploaded cert secures host (by CN/SAN, incl. wildcards).
+func Covers(dir, host string) bool {
+	list, err := List(dir)
+	if err != nil {
+		return false
+	}
+	for _, c := range list {
+		for _, s := range c.Subjects {
+			if SANMatches(host, s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func validatePair(certPEM, keyPEM []byte) (*x509.Certificate, error) {
 	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
 		return nil, fmt.Errorf("cert and key don't match or aren't valid PEM")

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bhagyajitjagdev/ward/backend/internal/caddy"
+	"github.com/bhagyajitjagdev/ward/backend/internal/certs"
 	"github.com/bhagyajitjagdev/ward/backend/internal/model"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 )
@@ -61,12 +62,15 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("DELETE /waf-exclusions/{id}", h.deleteExclusion)
 	mux.HandleFunc("GET /blocklist", h.listBlocks)
 	mux.HandleFunc("POST /blocklist", h.createBlock)
+	mux.HandleFunc("PATCH /blocklist/{id}", h.updateBlock)
 	mux.HandleFunc("DELETE /blocklist/{id}", h.deleteBlock)
 	mux.HandleFunc("GET /rate-limits", h.listRateLimits)
 	mux.HandleFunc("POST /rate-limits", h.createRateLimit)
+	mux.HandleFunc("PATCH /rate-limits/{id}", h.updateRateLimit)
 	mux.HandleFunc("DELETE /rate-limits/{id}", h.deleteRateLimit)
 	mux.HandleFunc("GET /geo-rules", h.listGeoRules)
 	mux.HandleFunc("POST /geo-rules", h.createGeoRule)
+	mux.HandleFunc("PATCH /geo-rules/{id}", h.updateGeoRule)
 	mux.HandleFunc("DELETE /geo-rules/{id}", h.deleteGeoRule)
 	mux.HandleFunc("GET /geoip", h.geoipGet)
 	mux.HandleFunc("POST /geoip/dbip", h.geoipDBIP)
@@ -166,6 +170,10 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
 		return
 	}
+	if in.TLSMode == "custom" && !certs.Covers(certs.Dir(), in.PublicHostname) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no uploaded certificate covers " + in.PublicHostname + " — upload one on the Certificates screen first"})
+		return
+	}
 
 	svc, err := h.store.CreateService(r.Context(), in)
 	if err != nil {
@@ -214,6 +222,10 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validTLSMode(in.TLSMode) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
+		return
+	}
+	if in.TLSMode == "custom" && !certs.Covers(certs.Dir(), in.PublicHostname) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no uploaded certificate covers " + in.PublicHostname + " — upload one on the Certificates screen first"})
 		return
 	}
 

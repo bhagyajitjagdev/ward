@@ -48,6 +48,29 @@ func (s *Store) CreateBlock(ctx context.Context, in model.BlockedIP) (model.Bloc
 	return row.toModel(), nil
 }
 
+// UpdateBlock replaces a block's editable fields (id/source/created_at preserved).
+// Reports whether one was found.
+func (s *Store) UpdateBlock(ctx context.Context, id string, in model.BlockedIP) (model.BlockedIP, bool, error) {
+	row := blockRow{
+		ID: id, Scope: orDefault(in.Scope, "global"), Mode: orDefault(in.Mode, "block"),
+		ServiceID: in.ServiceID, CIDR: in.CIDR, Reason: in.Reason, ExpiresAt: in.ExpiresAt,
+	}
+	res, err := s.DB.NewUpdate().Model(&row).
+		Column("scope", "mode", "service_id", "cidr", "reason", "expires_at").
+		Where("id = ?", id).Exec(ctx)
+	if err != nil {
+		return model.BlockedIP{}, false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.BlockedIP{}, false, nil
+	}
+	var out blockRow
+	if err := s.DB.NewSelect().Model(&out).Where("id = ?", id).Scan(ctx); err != nil {
+		return model.BlockedIP{}, false, err
+	}
+	return out.toModel(), true, nil
+}
+
 // ListBlocks returns all blocks, newest first.
 func (s *Store) ListBlocks(ctx context.Context) ([]model.BlockedIP, error) {
 	return s.listBlocks(ctx, false)
