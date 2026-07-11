@@ -78,13 +78,11 @@ func main() {
 	client := caddy.NewClient(env("WARD_CADDY_ADMIN", "http://localhost:2019"))
 	applier := caddy.NewApplier(st, client, caddyOptions())
 
-	// Startup reconcile: push current DB state to Caddy. Non-fatal — the control
-	// plane runs independently of the edge (principle #1).
-	if err := applier.Apply(context.Background()); err != nil {
-		log.Printf("startup reconcile: could not push config to Caddy (continuing): %v", err)
-	} else {
-		log.Printf("startup reconcile: pushed config to Caddy")
-	}
+	// Reconcile the edge in the background: retry until Caddy's admin answers (a cold
+	// `compose up` races it), then re-push periodically so drift (a Caddy restart or a
+	// lost config) self-heals. The control plane never blocks on the edge (principle #1).
+	// See architecture.md §7 (reconciliation loop — bootstrap + drift).
+	go reconcileLoop(context.Background(), applier)
 
 	// WAF read-path: tail Coraza's JSON audit log into waf_events.
 	if auditPath := os.Getenv("WARD_AUDIT_LOG"); auditPath != "" {
@@ -173,6 +171,41 @@ func pruneAccessLoop(ctx context.Context, st *store.Store) {
 			return
 		case <-t.C:
 			prune()
+		}
+	}
+}
+
+// reconcileLoop keeps Caddy's config in sync with the DB. It first retries with
+// backoff until the edge accepts a push (Ward can win the startup race against
+// Caddy's admin), then re-applies on an interval so a Caddy restart or a lost
+// config self-heals. Never blocks the control plane (principle #1).
+func reconcileLoop(ctx context.Context, applier *caddy.Applier) {
+	for delay := time.Second; ; {
+		if err := applier.Apply(ctx); err == nil {
+			log.Printf("reconcile: pushed config to Caddy")
+			break
+		} else {
+			log.Printf("reconcile: edge not ready, retrying in %s (%v)", delay, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		if delay < 15*time.Second {
+			delay *= 2
+		}
+	}
+	t := time.NewTicker(60 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := applier.Apply(ctx); err != nil {
+				log.Printf("reconcile (drift): %v", err)
+			}
 		}
 	}
 }

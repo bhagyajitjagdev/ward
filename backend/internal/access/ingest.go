@@ -145,10 +145,20 @@ func (ing *Ingester) tick(ctx context.Context) {
 
 	if len(events) > 0 {
 		if err := ing.store.InsertAccessEvents(ctx, events); err != nil {
-			log.Printf("access ingester: insert failed (will retry): %v", err)
-			return // don't advance the offset on failure
+			// Batch failed — insert per-row so one bad record can't wedge the pipeline.
+			// A stale/unknown service_id FK is the usual cause; the column is nullable.
+			for i := range events {
+				if err := ing.store.InsertAccessEvents(ctx, events[i:i+1]); err != nil {
+					ev := events[i]
+					ev.ServiceID = nil
+					if err := ing.store.InsertAccessEvents(ctx, []model.AccessEvent{ev}); err != nil {
+						log.Printf("access ingester: dropped 1 unstorable event: %v", err)
+					}
+				}
+			}
 		}
 	}
+	// Always advance the offset — a permanently-bad row must not block everything behind it.
 	if consumed > 0 {
 		ing.saveOffset(ctx, offset+consumed)
 	}
