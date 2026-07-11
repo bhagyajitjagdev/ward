@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Badge } from "@/components/ui/badge"
+import { COUNTRIES, countryName } from "@/lib/countries"
 import {
   Dialog,
   DialogContent,
@@ -246,6 +248,7 @@ function RulesTable() {
                   {g.countries.map((c) => (
                     <span
                       key={c}
+                      title={countryName(c)}
                       className={`rounded border px-1.5 py-0.5 font-mono text-[11px] ${
                         g.mode === "allow"
                           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
@@ -282,12 +285,60 @@ function RulesTable() {
   )
 }
 
+function CountryPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [q, setQ] = useState("")
+  const query = q.trim().toLowerCase()
+  const list = query
+    ? COUNTRIES.filter((c) => c.name.toLowerCase().includes(query) || c.code.toLowerCase() === query)
+    : COUNTRIES
+  const toggle = (code: string) => onChange(value.includes(code) ? value.filter((c) => c !== code) : [...value, code])
+  return (
+    <div className="space-y-2">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map((code) => (
+            <Badge key={code} variant="secondary" className="gap-1 pr-1">
+              {countryName(code)}
+              <span className="font-mono text-[10px] text-muted-foreground">{code}</span>
+              <button
+                type="button"
+                onClick={() => toggle(code)}
+                aria-label={`Remove ${code}`}
+                className="ml-0.5 rounded px-0.5 hover:text-red-500"
+              >
+                ×
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search countries…" />
+      <div className="max-h-44 overflow-y-auto rounded-md border">
+        {list.slice(0, 80).map((c) => (
+          <button
+            type="button"
+            key={c.code}
+            onClick={() => toggle(c.code)}
+            className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-muted/60 ${
+              value.includes(c.code) ? "bg-primary/10 text-primary" : ""
+            }`}
+          >
+            <span>{c.name}</span>
+            <span className="font-mono text-xs text-muted-foreground">{c.code}</span>
+          </button>
+        ))}
+        {list.length === 0 && <div className="px-3 py-2 text-sm text-muted-foreground">No match.</div>}
+      </div>
+    </div>
+  )
+}
+
 function AddRuleDialog() {
   const qc = useQueryClient()
   const { data: services } = useServices()
   const [open, setOpen] = useState(false)
   const [scope, setScope] = useState("global") // "global" | <service id>
-  const [countries, setCountries] = useState("")
+  const [countries, setCountries] = useState<string[]>([])
   const [mode, setMode] = useState<RuleMode>("block")
 
   const create = useMutation({
@@ -296,10 +347,7 @@ function AddRuleDialog() {
         mode,
         scope: scope === "global" ? "global" : "service",
         service_id: scope === "global" ? undefined : scope,
-        countries: countries
-          .split(",")
-          .map((c) => c.trim())
-          .filter(Boolean),
+        countries,
       }),
     onSuccess: (g: GeoRule) => {
       qc.invalidateQueries({ queryKey: ["geo-rules"] })
@@ -308,7 +356,7 @@ function AddRuleDialog() {
       )
       setOpen(false)
       setScope("global")
-      setCountries("")
+      setCountries([])
       setMode("block")
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't add the rule"),
@@ -361,21 +409,14 @@ function AddRuleDialog() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="countries">Countries</Label>
-            <Input
-              id="countries"
-              className="font-mono uppercase"
-              value={countries}
-              onChange={(e) => setCountries(e.target.value)}
-              placeholder="RU, CN, KP"
-            />
-            <p className="text-xs text-muted-foreground">Two-letter ISO codes, comma-separated.</p>
+            <Label>Countries</Label>
+            <CountryPicker value={countries} onChange={setCountries} />
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={create.isPending}>
+            <Button type="submit" disabled={create.isPending || countries.length === 0}>
               {create.isPending ? "Adding…" : mode === "allow" ? "Allow only these" : "Block"}
             </Button>
           </DialogFooter>

@@ -141,14 +141,14 @@ func TestGenerateTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(out)
-	for _, want := range []string{`"module": "internal"`, "internal.example.com", `"module": "acme"`, "ops@example.com", `"skip"`, "plain.example.com", ":443", `"308"`, "disable_redirects"} {
+	for _, want := range []string{`"module": "internal"`, "internal.example.com", `"module": "acme"`, "ops@example.com", `"skip"`, "plain.example.com", ":443", `"302"`, "disable_redirects"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("TLS config missing %q", want)
 		}
 	}
 	// the none-mode host must NOT get an http->https redirect
-	if strings.Count(s, `"308"`) != 2 {
-		t.Errorf("want 2 redirects (internal + managed, not the none host), got %d", strings.Count(s, `"308"`))
+	if strings.Count(s, `"302"`) != 2 {
+		t.Errorf("want 2 redirects (internal + managed, not the none host), got %d", strings.Count(s, `"302"`))
 	}
 
 	// dev-disabled → no HTTPS, auto-https off

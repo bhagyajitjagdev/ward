@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -9,6 +9,7 @@ import type { WafTrigger } from "@/lib/api"
 import { useServiceNames } from "@/data/queries"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -141,17 +142,27 @@ function ExclusionDialog({
   onClose: () => void
 }) {
   const qc = useQueryClient()
+  const [path, setPath] = useState("")
+  const [target, setTarget] = useState("")
+  // sync the editable fields whenever a different trigger is opened
+  useEffect(() => {
+    setPath(trigger?.path ?? "")
+    setTarget(trigger?.matched_target ?? "")
+  }, [trigger])
+
   const create = useMutation({
     mutationFn: (t: WafTrigger) =>
       api.createExclusion({
         rule_id: t.rule_id,
         scope: t.service_id ? "service" : "global",
         service_id: t.service_id ?? undefined,
-        path: t.path || undefined,
-        target: t.matched_target || undefined,
+        path: path.trim() || undefined,
+        target: target.trim() || undefined,
       }),
     onSuccess: (x) => {
       qc.invalidateQueries({ queryKey: ["exclusions"] })
+      qc.invalidateQueries({ queryKey: ["top-triggers"] })
+      qc.invalidateQueries({ queryKey: ["waf-events"] })
       toast.success("Exclusion created", { description: `${x.rule_id} silenced on ${x.path || "this service"}` })
       onClose()
     },
@@ -159,9 +170,9 @@ function ExclusionDialog({
   })
 
   const preview = trigger
-    ? `SecRule REQUEST_URI "@beginsWith ${trigger.path}" \\
-  "id:9000xxxx,phase:1,pass,nolog,\\
-   ctl:ruleRemoveTargetById=${trigger.rule_id};${trigger.matched_target || "ARGS"}"`
+    ? `SecRule REQUEST_URI "@beginsWith ${path || "/"}" \\
+  "id:‹auto›,phase:1,pass,nolog,\\
+   ctl:ruleRemoveTargetById=${trigger.rule_id};${target || "ARGS"}"`
     : ""
 
   return (
@@ -172,22 +183,22 @@ function ExclusionDialog({
             <DialogHeader>
               <DialogTitle>Create scoped exclusion</DialogTitle>
               <DialogDescription>
-                Tell the WAF to stop inspecting <Mono>{trigger.matched_target || "this field"}</Mono> for rule{" "}
+                Tell the WAF to stop inspecting <Mono className="break-all">{target || "this field"}</Mono> for rule{" "}
                 <Mono>{trigger.rule_id}</Mono> — only on this path{trigger.service_id ? ", only for this service" : ""}.
                 Everywhere else it stays armed.
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-[100px_1fr] gap-x-4 gap-y-2.5">
+              <div className="grid grid-cols-[100px_1fr] items-center gap-x-4 gap-y-2.5">
                 <Label>Scope</Label>
                 <Mono>{trigger.service_id ? (serviceName ?? "service") : "global"}</Mono>
-                <Label>Path</Label>
-                <Mono>{trigger.path}</Mono>
                 <Label>Rule</Label>
                 <Mono>{trigger.rule_id}</Mono>
+                <Label>Path</Label>
+                <Input className="h-8 font-mono text-xs" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/" />
                 <Label>Field</Label>
-                <Mono>{trigger.matched_target || "—"}</Mono>
+                <Input className="h-8 break-all font-mono text-xs" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="whole rule (leave blank)" />
               </div>
 
               <div>

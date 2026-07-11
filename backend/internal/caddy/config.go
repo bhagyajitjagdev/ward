@@ -287,8 +287,11 @@ func httpsRedirectRoute(host string) map[string]any {
 			"expression": "{http.request.scheme} == 'http'",
 		}},
 		"handle": []any{map[string]any{
-			"handler":     "static_response",
-			"status_code": "308",
+			"handler": "static_response",
+			// 302 (temporary), not 308 (permanent): browsers cache a permanent redirect
+			// hard, so flipping a service to tls_mode=none would leave clients stuck
+			// forcing HTTPS with no cert (ERR_SSL_PROTOCOL_ERROR). 302 recovers cleanly.
+			"status_code": "302",
 			"headers":     map[string]any{"Location": []string{"https://{http.request.host}{http.request.uri}"}},
 		}},
 	}
