@@ -1,0 +1,1257 @@
+# Ward control-plane API — the source of truth for the HTTP surface.
+# Lives next to the handlers (internal/api) so route changes and spec changes
+# travel in the same diff. Served at GET /api/openapi.json (converted to JSON);
+# the ward-ui client types are generated from this file (ui: npm run generate:api),
+# so a change here surfaces as a TypeScript compile error in the UI.
+openapi: 3.0.3
+info:
+  title: Ward API
+  description: >
+    Self-hosted security-edge control plane over Caddy + Coraza. Sessions and
+    machine API tokens both authenticate as bearer tokens.
+  version: "1"
+servers:
+  - url: /api
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Liveness + DB reachability
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /version:
+    get:
+      operationId: getVersion
+      summary: Running Ward build version
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionInfo" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /openapi.json:
+    get:
+      operationId: getOpenAPISpec
+      summary: This specification (JSON)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object }
+
+  /auth/state:
+    get:
+      operationId: authState
+      summary: Whether first-run setup is still needed
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthState" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /auth/setup:
+    post:
+      operationId: setup
+      summary: Create the owner account (first run only)
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/Credentials" }
+      responses:
+        "201":
+          description: Owner created; session started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /auth/login:
+    post:
+      operationId: login
+      summary: Start a session
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/Credentials" }
+      responses:
+        "200":
+          description: Session started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: End the current session
+      responses:
+        "200": { description: Logged out }
+        default: { $ref: "#/components/responses/Error" }
+
+  /auth/me:
+    get:
+      operationId: me
+      summary: The authenticated user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /users:
+    get:
+      operationId: listUsers
+      summary: List users
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createUser
+      summary: Create a user
+      requestBody: { $ref: "#/components/requestBodies/Credentials" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /users/{id}:
+    delete:
+      operationId: deleteUser
+      summary: Delete a user (not the owner)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api-tokens:
+    get:
+      operationId: listApiTokens
+      summary: List machine API tokens
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApiToken" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createApiToken
+      summary: Create a token (secret returned once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201":
+          description: Created — `token` present only in this response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiToken" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /api-tokens/{id}:
+    delete:
+      operationId: revokeApiToken
+      summary: Revoke a token
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Revoked }
+        default: { $ref: "#/components/responses/Error" }
+
+  /audit-log:
+    get:
+      operationId: listAuditLog
+      summary: Audit trail, newest first
+      parameters:
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEntry" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /overview:
+    get:
+      operationId: overview
+      summary: Dashboard aggregates (24h)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Overview" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /services:
+    get:
+      operationId: listServices
+      summary: List services
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Service" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createService
+      summary: Create a service (reconciles the edge)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /services/{id}:
+    get:
+      operationId: getService
+      summary: Get a service
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateService
+      summary: Update a service (full object; reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteService
+      summary: Delete a service (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /waf-events:
+    get:
+      operationId: listWafEvents
+      summary: WAF detections, newest first
+      parameters:
+        - { name: service_id, in: query, schema: { type: string } }
+        - { name: path, in: query, schema: { type: string } }
+        - { name: client_ip, in: query, schema: { type: string } }
+        - { name: rule_id, in: query, schema: { type: integer } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WafEvent" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /waf-events/top:
+    get:
+      operationId: topTriggers
+      summary: Detections clustered by (service, path, rule, target)
+      parameters:
+        - { name: service_id, in: query, schema: { type: string } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WafTrigger" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /access-events:
+    get:
+      operationId: listAccessEvents
+      summary: Access log, newest first
+      parameters:
+        - { name: service_id, in: query, schema: { type: string } }
+        - { name: client_ip, in: query, schema: { type: string } }
+        - { name: method, in: query, schema: { type: string } }
+        - { name: path, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: integer } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AccessEvent" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /access-events/stats:
+    get:
+      operationId: accessStats
+      summary: Access-log aggregates
+      parameters:
+        - { name: service_id, in: query, schema: { type: string } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessStats" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /waf-exclusions:
+    get:
+      operationId: listExclusions
+      summary: List WAF exclusions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WafExclusion" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createExclusion
+      summary: Create a scoped exclusion (SecLang generated server-side)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExclusionInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WafExclusion" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /waf-exclusions/{id}:
+    delete:
+      operationId: deleteExclusion
+      summary: Delete an exclusion (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /waf-custom-rules:
+    get:
+      operationId: listWafCustomRules
+      summary: List user-authored raw SecLang rules
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WafCustomRule" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createWafCustomRule
+      summary: Create a raw SecLang rule (validated against the edge before it's kept)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WafCustomRuleInput" }
+      responses:
+        "201":
+          description: Created — the edge accepted the rule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WafCustomRule" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /waf-custom-rules/{id}:
+    patch:
+      operationId: updateWafCustomRule
+      summary: Update a rule (validated against the edge; reverted on rejection)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WafCustomRuleInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WafCustomRule" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteWafCustomRule
+      summary: Delete a rule (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /blocklist:
+    get:
+      operationId: listBlocklist
+      summary: List IP block/allow rules
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Block" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createBlock
+      summary: Create a rule (reconciles the edge)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BlockInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Block" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /blocklist/{id}:
+    patch:
+      operationId: updateBlock
+      summary: Update a rule (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BlockInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Block" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteBlock
+      summary: Delete a rule (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /rate-limits:
+    get:
+      operationId: listRateLimits
+      summary: List rate limits
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RateLimit" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createRateLimit
+      summary: Create a rate limit (reconciles the edge)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RateLimitInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RateLimit" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /rate-limits/{id}:
+    patch:
+      operationId: updateRateLimit
+      summary: Update a rate limit (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RateLimitInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RateLimit" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteRateLimit
+      summary: Delete a rate limit (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /geo-rules:
+    get:
+      operationId: listGeoRules
+      summary: List geo rules
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GeoRule" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createGeoRule
+      summary: Create a geo rule (reconciles the edge)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GeoRuleInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GeoRule" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /geo-rules/{id}:
+    patch:
+      operationId: updateGeoRule
+      summary: Update a geo rule (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GeoRuleInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GeoRule" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteGeoRule
+      summary: Delete a geo rule (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
+  /geoip:
+    get:
+      operationId: geoipStatus
+      summary: GeoIP database status
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GeoIPStatus" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: geoipDelete
+      summary: Remove the GeoIP database
+      responses:
+        "204": { description: Removed }
+        default: { $ref: "#/components/responses/Error" }
+
+  /geoip/dbip:
+    post:
+      operationId: geoipDBIP
+      summary: Download the free DB-IP country database
+      responses:
+        "200":
+          description: Downloaded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GeoIPStatus" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /geoip/maxmind:
+    post:
+      operationId: geoipMaxMind
+      summary: Download GeoLite2 with a MaxMind license key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [license_key]
+              properties:
+                license_key: { type: string }
+      responses:
+        "200":
+          description: Downloaded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GeoIPStatus" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /geoip/upload:
+    post:
+      operationId: geoipUpload
+      summary: Upload an .mmdb file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GeoIPStatus" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /config-snapshots:
+    get:
+      operationId: listSnapshots
+      summary: Applied-config snapshots, newest first (without config bodies)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ConfigSnapshot" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /config-snapshots/{id}/rollback:
+    post:
+      operationId: rollback
+      summary: Push a snapshot's config back to the edge
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200":
+          description: Rolled back
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, snapshot_id]
+                properties:
+                  status: { type: string }
+                  snapshot_id: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+
+  /settings:
+    get:
+      operationId: getSettings
+      summary: Edge-wide settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateSettings
+      summary: Update whichever settings are present (audited; reconciles)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingsUpdate" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /certificates:
+    get:
+      operationId: listCertificates
+      summary: List uploaded custom certificates
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Certificate" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: uploadCertificate
+      summary: Upload a PEM cert + key (name auto-derived when omitted)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CertificateInput" }
+      responses:
+        "201":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Certificate" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /certificates/{domain}:
+    delete:
+      operationId: deleteCertificate
+      summary: Remove an uploaded certificate
+      parameters:
+        - { name: domain, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Removed }
+        default: { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Session token or machine API token.
+
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  requestBodies:
+    Credentials:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Credentials" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+
+    VersionInfo:
+      type: object
+      required: [version]
+      properties:
+        version: { type: string }
+
+    AuthState:
+      type: object
+      required: [needs_setup]
+      properties:
+        needs_setup: { type: boolean }
+
+    Credentials:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 3 }
+        password: { type: string, minLength: 8 }
+
+    User:
+      type: object
+      required: [id, username, role, is_owner, created_at]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        role: { type: string }
+        is_owner: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    LoginResponse:
+      type: object
+      required: [token, expires_at, user]
+      properties:
+        token: { type: string }
+        expires_at: { type: string, format: date-time }
+        user: { $ref: "#/components/schemas/User" }
+
+    WafMode:
+      type: string
+      enum: [DetectionOnly, "On"]
+
+    ServiceWafMode:
+      description: Per-service override — "" inherits the global default.
+      type: string
+      enum: ["", DetectionOnly, "On"]
+
+    Service:
+      type: object
+      required:
+        [id, name, public_hostname, upstreams, lb_policy, tls_mode, waf_enabled, waf_mode, enabled, created_at, updated_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        public_hostname: { type: string }
+        upstreams:
+          type: array
+          items: { type: string }
+        lb_policy: { type: string }
+        tls_mode: { type: string }
+        waf_enabled: { type: boolean }
+        waf_mode: { $ref: "#/components/schemas/ServiceWafMode" }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ServiceInput:
+      type: object
+      required: [name, public_hostname, upstreams]
+      properties:
+        name: { type: string }
+        public_hostname: { type: string }
+        upstreams:
+          type: array
+          items: { type: string }
+        lb_policy: { type: string }
+        tls_mode: { type: string }
+        waf_enabled: { type: boolean }
+        waf_mode: { $ref: "#/components/schemas/ServiceWafMode" }
+
+    ServiceUpdate:
+      allOf:
+        - $ref: "#/components/schemas/ServiceInput"
+        - type: object
+          required: [enabled]
+          properties:
+            enabled: { type: boolean }
+
+    Settings:
+      type: object
+      required: [waf_engine_mode, acme_email, access_retention_days, waf_retention_days]
+      properties:
+        waf_engine_mode: { $ref: "#/components/schemas/WafMode" }
+        acme_email: { type: string }
+        access_retention_days: { type: integer }
+        waf_retention_days: { type: integer }
+        crs_version:
+          type: string
+          description: Read-only — OWASP CRS version the running edge reported.
+
+    SettingsUpdate:
+      description: Only the fields present (non-zero) are applied.
+      type: object
+      properties:
+        waf_engine_mode: { $ref: "#/components/schemas/WafMode" }
+        acme_email: { type: string }
+        access_retention_days: { type: integer, minimum: 1, maximum: 365 }
+        waf_retention_days: { type: integer, minimum: 1, maximum: 365 }
+
+    Certificate:
+      type: object
+      required: [domain, subjects, not_after, updated_at]
+      properties:
+        domain: { type: string, description: "Storage name (label) — coverage comes from `subjects`." }
+        subjects:
+          type: array
+          items: { type: string }
+        not_after: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CertificateInput:
+      type: object
+      required: [cert_pem, key_pem]
+      properties:
+        domain: { type: string, description: "Optional label; auto-derived from the cert when empty." }
+        cert_pem: { type: string }
+        key_pem: { type: string }
+
+    WafEvent:
+      type: object
+      required:
+        [id, tx_id, ts, host, client_ip, authed, method, path, uri, status, engine_mode, is_interrupted, rule_id, rule_msg, severity, tags, is_anomaly_score]
+      properties:
+        id: { type: string }
+        tx_id: { type: string }
+        ts: { type: string, format: date-time }
+        service_id: { type: string, nullable: true }
+        host: { type: string }
+        client_ip: { type: string }
+        authed: { type: boolean }
+        user_agent: { type: string }
+        method: { type: string }
+        path: { type: string }
+        uri: { type: string }
+        status: { type: integer }
+        engine_mode: { type: string }
+        is_interrupted: { type: boolean }
+        rule_id: { type: integer }
+        rule_msg: { type: string }
+        severity: { type: string }
+        matched_target: { type: string }
+        matched_value: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        is_anomaly_score: { type: boolean }
+        crs_version: { type: string }
+        raw: { type: string }
+
+    WafTrigger:
+      type: object
+      required: [path, rule_id, rule_msg, severity, hits, distinct_ips, first_seen, last_seen]
+      properties:
+        service_id: { type: string, nullable: true }
+        host: { type: string }
+        path: { type: string }
+        rule_id: { type: integer }
+        rule_msg: { type: string }
+        severity: { type: string }
+        matched_target: { type: string }
+        hits: { type: integer }
+        distinct_ips: { type: integer }
+        first_seen: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time }
+
+    Scope:
+      type: string
+      enum: [global, service]
+
+    BlockMode:
+      type: string
+      enum: [block, allow]
+
+    WafExclusion:
+      type: object
+      required: [id, scope, rule_id, seclang, state, source, created_at]
+      properties:
+        id: { type: string }
+        scope: { $ref: "#/components/schemas/Scope" }
+        service_id: { type: string, nullable: true }
+        rule_id: { type: integer }
+        path: { type: string }
+        target: { type: string }
+        seclang: { type: string }
+        state: { type: string }
+        source: { type: string }
+        created_at: { type: string, format: date-time }
+
+    ExclusionInput:
+      type: object
+      required: [rule_id, scope]
+      properties:
+        rule_id: { type: integer }
+        scope: { $ref: "#/components/schemas/Scope" }
+        service_id: { type: string, nullable: true }
+        path: { type: string }
+        target: { type: string }
+
+    WafCustomRule:
+      type: object
+      required: [id, scope, name, seclang, enabled, created_at, updated_at]
+      properties:
+        id: { type: string }
+        scope: { $ref: "#/components/schemas/Scope" }
+        service_id: { type: string, nullable: true }
+        name: { type: string }
+        seclang: { type: string }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WafCustomRuleInput:
+      type: object
+      required: [name, seclang]
+      properties:
+        scope: { $ref: "#/components/schemas/Scope" }
+        service_id: { type: string, nullable: true }
+        name: { type: string }
+        seclang:
+          type: string
+          description: Raw SecLang (multi-line). Injected before the CRS include, after Ward's generated exclusions.
+        enabled: { type: boolean }
+
+    Block:
+      type: object
+      required: [id, scope, mode, cidr, source, created_at]
+      properties:
+        id: { type: string }
+        scope: { $ref: "#/components/schemas/Scope" }
+        mode: { $ref: "#/components/schemas/BlockMode" }
+        service_id: { type: string, nullable: true }
+        cidr: { type: string }
+        reason: { type: string }
+        source: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    BlockInput:
+      type: object
+      required: [cidr]
+      properties:
+        cidr: { type: string }
+        scope: { $ref: "#/components/schemas/Scope" }
+        mode: { $ref: "#/components/schemas/BlockMode" }
+        service_id: { type: string, nullable: true }
+        reason: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+
+    RateLimit:
+      type: object
+      required: [id, scope, max_events, window, created_at]
+      properties:
+        id: { type: string }
+        scope: { $ref: "#/components/schemas/Scope" }
+        service_id: { type: string, nullable: true }
+        max_events: { type: integer }
+        window: { type: string, description: "Go duration, e.g. 10s / 1m." }
+        created_at: { type: string, format: date-time }
+
+    RateLimitInput:
+      type: object
+      required: [scope, max_events, window]
+      properties:
+        scope: { $ref: "#/components/schemas/Scope" }
+        service_id: { type: string, nullable: true }
+        max_events: { type: integer }
+        window: { type: string }
+
+    GeoRule:
+      type: object
+      required: [id, scope, mode, countries, created_at]
+      properties:
+        id: { type: string }
+        scope: { $ref: "#/components/schemas/Scope" }
+        mode: { $ref: "#/components/schemas/BlockMode" }
+        service_id: { type: string, nullable: true }
+        countries:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+
+    GeoRuleInput:
+      type: object
+      required: [scope, countries]
+      properties:
+        scope: { $ref: "#/components/schemas/Scope" }
+        mode: { $ref: "#/components/schemas/BlockMode" }
+        service_id: { type: string, nullable: true }
+        countries:
+          type: array
+          items: { type: string }
+
+    GeoIPStatus:
+      type: object
+      required: [present, dir]
+      properties:
+        present: { type: boolean }
+        source: { type: string }
+        filename: { type: string }
+        size: { type: integer, format: int64 }
+        updated_at: { type: string, format: date-time }
+        dir: { type: string }
+
+    ApiToken:
+      type: object
+      required: [id, name, revoked, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        user_id: { type: string, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        revoked: { type: boolean }
+        created_at: { type: string, format: date-time }
+        token:
+          type: string
+          description: Present only in the creation response.
+
+    AuditEntry:
+      type: object
+      required: [id, actor, action, created_at]
+      properties:
+        id: { type: string }
+        actor: { type: string }
+        action: { type: string }
+        target: { type: string }
+        detail: { type: string }
+        created_at: { type: string, format: date-time }
+
+    Overview:
+      type: object
+      required:
+        [services, waf_services, detections_24h, blocked_24h, requests_24h, active_blocks, activity, by_service]
+      properties:
+        services: { type: integer }
+        waf_services: { type: integer }
+        detections_24h: { type: integer }
+        blocked_24h: { type: integer }
+        requests_24h: { type: integer }
+        active_blocks: { type: integer }
+        activity:
+          type: array
+          items:
+            type: object
+            required: [hour, detections, blocked, requests]
+            properties:
+              hour: { type: string, format: date-time }
+              detections: { type: integer }
+              blocked: { type: integer }
+              requests: { type: integer }
+        by_service:
+          type: array
+          items:
+            type: object
+            required: [service_id, detections_24h]
+            properties:
+              service_id: { type: string }
+              detections_24h: { type: integer }
+
+    AccessEvent:
+      type: object
+      required: [id, ts, host, client_ip, method, path, status, duration_ms, bytes]
+      properties:
+        id: { type: string }
+        ts: { type: string, format: date-time }
+        service_id: { type: string, nullable: true }
+        host: { type: string }
+        client_ip: { type: string }
+        method: { type: string }
+        path: { type: string }
+        query: { type: string }
+        status: { type: integer }
+        duration_ms: { type: number }
+        bytes: { type: integer, format: int64 }
+        user_agent: { type: string }
+
+    AccessStats:
+      type: object
+      required: [total, status, bytes, avg_ms, p95_ms, series, top_paths]
+      properties:
+        total: { type: integer, format: int64 }
+        status:
+          type: object
+          required: ["2xx", "3xx", "4xx", "5xx"]
+          properties:
+            "2xx": { type: integer, format: int64 }
+            "3xx": { type: integer, format: int64 }
+            "4xx": { type: integer, format: int64 }
+            "5xx": { type: integer, format: int64 }
+        bytes: { type: integer, format: int64 }
+        avg_ms: { type: number }
+        p95_ms: { type: number }
+        series:
+          type: array
+          items:
+            type: object
+            required: [bucket, requests, errors]
+            properties:
+              bucket: { type: string }
+              requests: { type: integer, format: int64 }
+              errors: { type: integer, format: int64 }
+        top_paths:
+          type: array
+          items:
+            type: object
+            required: [path, count]
+            properties:
+              path: { type: string }
+              count: { type: integer }
+
+    ConfigSnapshot:
+      type: object
+      required: [id, active, created_at]
+      properties:
+        id: { type: string }
+        note: { type: string }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        caddy_json:
+          type: string
+          description: Present only when fetching a single snapshot.

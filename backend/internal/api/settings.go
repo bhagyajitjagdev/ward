@@ -13,6 +13,7 @@ type settingsDTO struct {
 	WAFEngineMode       string `json:"waf_engine_mode"`       // "DetectionOnly" | "On" — the global default
 	ACMEEmail           string `json:"acme_email"`            // contact email for managed (Let's Encrypt) certs
 	AccessRetentionDays int    `json:"access_retention_days"` // days of raw access events to keep
+	WAFRetentionDays    int    `json:"waf_retention_days"`    // days of WAF detections to keep
 	CRSVersion          string `json:"crs_version"`           // read-only: OWASP CRS version the edge reported (from detections)
 }
 
@@ -27,6 +28,7 @@ func (h *Handler) currentSettings(r *http.Request) settingsDTO {
 		WAFEngineMode:       h.store.WAFEngineMode(r.Context(), "DetectionOnly"),
 		ACMEEmail:           h.store.ACMEEmail(r.Context(), ""),
 		AccessRetentionDays: h.store.AccessRetentionDays(r.Context(), 7),
+		WAFRetentionDays:    h.store.WAFRetentionDays(r.Context(), 30),
 		CRSVersion:          h.store.LatestCRSVersion(r.Context()),
 	}
 }
@@ -78,6 +80,18 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.audit(r, "settings.update", store.AccessRetentionKey, strconv.Itoa(in.AccessRetentionDays))
+		changed = true
+	}
+	if in.WAFRetentionDays > 0 {
+		if in.WAFRetentionDays > 365 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "waf_retention_days must be between 1 and 365"})
+			return
+		}
+		if err := h.store.SetSetting(r.Context(), store.WAFRetentionKey, strconv.Itoa(in.WAFRetentionDays)); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.audit(r, "settings.update", store.WAFRetentionKey, strconv.Itoa(in.WAFRetentionDays))
 		changed = true
 	}
 	if !changed {

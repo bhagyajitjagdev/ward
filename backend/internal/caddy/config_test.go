@@ -78,6 +78,53 @@ func TestGenerateWithExclusions(t *testing.T) {
 	}
 }
 
+func TestGenerateWithCustomRules(t *testing.T) {
+	services := []model.Service{
+		{ID: "svc-a", Name: "a", PublicHostname: "a.example.com", Upstreams: []string{"a:80"}, Enabled: true, WAFEnabled: true},
+		{ID: "svc-b", Name: "b", PublicHostname: "b.example.com", Upstreams: []string{"b:80"}, Enabled: true, WAFEnabled: true},
+	}
+	exclusions := []model.WAFExclusion{
+		{Scope: "global", State: "active", SecLang: "SecRuleRemoveById 920350"},
+	}
+	rules := []model.WAFCustomRule{
+		{Scope: "global", Enabled: true, SecLang: `SecRule REQUEST_METHOD "@streq TRACE" "id:1001,phase:1,deny,status:405"`},
+		{Scope: "service", ServiceID: ptr("svc-a"), Enabled: true, SecLang: `SecRule ARGS:debug "@rx ^1$" "id:1002,phase:2,deny"`},
+		{Scope: "global", Enabled: false, SecLang: "SecRuleRemoveById 888888"}, // disabled → excluded
+	}
+	out, err := Generate(Input{Services: services, Exclusions: exclusions, CustomRules: rules}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "id:1001") {
+		t.Error("global custom rule not composed into directives")
+	}
+	if !strings.Contains(s, "id:1002") {
+		t.Error("service custom rule not composed into directives")
+	}
+	if strings.Contains(s, "888888") {
+		t.Error("disabled custom rule should not be composed")
+	}
+	// Deterministic slot: generated exclusions, then custom rules, then the CRS include.
+	excl, rule, crs := strings.Index(s, "SecRuleRemoveById 920350"), strings.Index(s, "id:1001"), strings.Index(s, "Include @owasp_crs/*.conf")
+	if excl < 0 || rule < 0 || crs < 0 || !(excl < rule && rule < crs) {
+		t.Errorf("want exclusion < custom rule < CRS include, got idx %d / %d / %d", excl, rule, crs)
+	}
+	// The service-scoped rule must be in svc-a's directives only. Directives are
+	// per-service strings; svc-b's must not contain id:1002.
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(out)
+	if got := strings.Count(raw, "id:1002"); got != 1 {
+		t.Errorf("service-scoped custom rule appears %d times, want 1 (svc-a only)", got)
+	}
+	if got := strings.Count(raw, "id:1001"); got != 2 {
+		t.Errorf("global custom rule appears %d times, want 2 (both services)", got)
+	}
+}
+
 func TestGenerateExclusionSecLang(t *testing.T) {
 	// path + target → runtime rule with reserved id
 	got := GenerateExclusionSecLang(90000001, 942100, "/leads/batch", "ARGS:id")

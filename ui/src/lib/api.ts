@@ -1,6 +1,11 @@
-// Typed client for the Ward control-plane API. Base defaults to `/api`, which the
-// Vite dev server proxies to the Go backend (see vite.config.ts). Field names mirror
-// the Go DTOs exactly (snake_case).
+// Typed client for the Ward control-plane API, generated from the backend's
+// OpenAPI spec (backend/internal/api/openapi.yaml → `npm run generate:api` →
+// api.schema.d.ts). Paths, params, bodies and responses are all spec-checked:
+// an API change shows up here as a TypeScript error, not a runtime surprise.
+// Base defaults to `/api`, which the Vite dev server proxies to the Go backend.
+import createClient from "openapi-fetch"
+import type { paths, components } from "./api.schema"
+
 const BASE = import.meta.env.VITE_API_BASE ?? "/api"
 const TOKEN_KEY = "ward.token"
 
@@ -20,364 +25,146 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {}
-  const token = getToken()
-  if (token) headers["Authorization"] = `Bearer ${token}`
-  if (body !== undefined) headers["Content-Type"] = "application/json"
+const client = createClient<paths>({ baseUrl: BASE })
 
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+client.use({
+  onRequest({ request }) {
+    const token = getToken()
+    if (token) request.headers.set("Authorization", `Bearer ${token}`)
+    return request
+  },
+  onResponse({ response }) {
+    if (response.status === 401) {
+      setToken(null)
+      // Bounce to login on an expired/invalid session — unless we're already there
+      // (a bad-credentials 401 on the login/setup pages is handled locally).
+      const p = window.location.pathname
+      if (p !== "/login" && p !== "/setup") window.location.replace("/login")
+    }
+    return response
+  },
+})
 
-  if (res.status === 401) {
-    setToken(null)
-    // Bounce to login on an expired/invalid session — unless we're already there
-    // (a bad-credentials 401 on the login/setup pages is handled locally).
-    const p = window.location.pathname
-    if (p !== "/login" && p !== "/setup") window.location.replace("/login")
+// unwrap turns openapi-fetch's {data, error, response} into the throw-on-error
+// promise shape the rest of the app uses.
+function unwrap<T>(r: { data?: T; error?: unknown; response: Response }): T {
+  if (r.error !== undefined || !r.response.ok) {
+    const msg = (r.error as { error?: string } | undefined)?.error || r.response.statusText
+    throw new ApiError(r.response.status, msg)
   }
-
-  const text = await res.text()
-  const data = text ? JSON.parse(text) : null
-  if (!res.ok) {
-    throw new ApiError(res.status, (data && data.error) || res.statusText)
-  }
-  return data as T
+  return r.data as T
 }
 
-function qs(params: object): string {
-  const p = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== "") p.set(k, String(v))
-  }
-  const s = p.toString()
-  return s ? `?${s}` : ""
-}
+// --- types (aliases into the generated schema — names kept from the old client) ---
 
-// --- types (mirror the Go DTOs) ---
+type S = components["schemas"]
 
-export interface User {
-  id: string
-  username: string
-  role: string
-  is_owner: boolean
-  created_at: string
-}
+export type User = S["User"]
+export type LoginResponse = S["LoginResponse"]
+export type WafMode = S["WafMode"]
+export type Service = S["Service"]
+export type ServiceInput = S["ServiceInput"]
+export type ServiceUpdate = S["ServiceUpdate"]
+export type Settings = S["Settings"]
+export type Certificate = S["Certificate"]
+export type CertificateInput = S["CertificateInput"]
+export type WafEvent = S["WafEvent"]
+export type WafTrigger = S["WafTrigger"]
+export type WafExclusion = S["WafExclusion"]
+export type ExclusionInput = S["ExclusionInput"]
+export type WafCustomRule = S["WafCustomRule"]
+export type WafCustomRuleInput = S["WafCustomRuleInput"]
+export type Block = S["Block"]
+export type BlockInput = S["BlockInput"]
+export type RateLimit = S["RateLimit"]
+export type RateLimitInput = S["RateLimitInput"]
+export type GeoRule = S["GeoRule"]
+export type GeoRuleInput = S["GeoRuleInput"]
+export type GeoIPStatus = S["GeoIPStatus"]
+export type ApiToken = S["ApiToken"]
+export type AuditEntry = S["AuditEntry"]
+export type Overview = S["Overview"]
+export type AccessEvent = S["AccessEvent"]
+export type AccessStats = S["AccessStats"]
 
-export interface LoginResponse {
-  token: string
-  expires_at: string
-  user: User
-}
-
-export type WafMode = "DetectionOnly" | "On"
-
-export interface Service {
-  id: string
-  name: string
-  public_hostname: string
-  upstreams: string[]
-  lb_policy: string
-  tls_mode: string
-  waf_enabled: boolean
-  waf_mode: "" | WafMode // "" = inherit the global default
-  enabled: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface ServiceInput {
-  name: string
-  public_hostname: string
-  upstreams: string[]
-  lb_policy?: string
-  tls_mode?: string
-  waf_enabled?: boolean
-  waf_mode?: "" | WafMode
-}
-
-export interface Settings {
-  waf_engine_mode: WafMode
-  acme_email: string
-  access_retention_days: number
-  crs_version?: string // read-only: OWASP CRS version the running edge reported
-}
-
-export interface Certificate {
-  domain: string
-  subjects: string[]
-  not_after: string
-  updated_at: string
-}
-
-export interface CertificateInput {
-  domain: string
-  cert_pem: string
-  key_pem: string
-}
-
-export interface ServiceUpdate extends ServiceInput {
-  enabled: boolean
-}
-
-export interface WafEvent {
-  id: string
-  tx_id: string
-  ts: string
-  service_id?: string | null
-  host: string
-  client_ip: string
-  authed: boolean
-  user_agent?: string
-  method: string
-  path: string
-  uri: string
-  status: number
-  engine_mode: string
-  is_interrupted: boolean
-  rule_id: number
-  rule_msg: string
-  severity: string
-  matched_target?: string
-  matched_value?: string
-  tags: string[]
-  is_anomaly_score: boolean
-  crs_version?: string
-  raw?: string
-}
-
-export interface WafTrigger {
-  service_id?: string | null
-  host?: string
-  path: string
-  rule_id: number
-  rule_msg: string
-  severity: string
-  matched_target?: string
-  hits: number
-  distinct_ips: number
-  first_seen: string
-  last_seen: string
-}
-
-export interface WafExclusion {
-  id: string
-  scope: "global" | "service"
-  service_id?: string | null
-  rule_id: number
-  path?: string
-  target?: string
-  seclang: string
-  state: string
-  source: string
-  created_at: string
-}
-
-export interface ExclusionInput {
-  rule_id: number
-  scope: "global" | "service"
-  service_id?: string | null
-  path?: string
-  target?: string
-}
-
-export interface Block {
-  id: string
-  scope: "global" | "service"
-  mode: "block" | "allow"
-  service_id?: string | null
-  cidr: string
-  reason?: string
-  source: string
-  expires_at?: string | null
-  created_at: string
-}
-
-export interface BlockInput {
-  cidr: string
-  scope?: "global" | "service"
-  mode?: "block" | "allow"
-  service_id?: string | null
-  reason?: string
-  expires_at?: string | null
-}
-
-export interface RateLimit {
-  id: string
-  scope: "global" | "service"
-  service_id?: string | null
-  max_events: number
-  window: string
-  created_at: string
-}
-
-export interface RateLimitInput {
-  scope: "global" | "service"
-  service_id?: string | null
-  max_events: number
-  window: string
-}
-
-export interface GeoRule {
-  id: string
-  scope: "global" | "service"
-  mode: "block" | "allow"
-  service_id?: string | null
-  countries: string[]
-  created_at: string
-}
-
-export interface GeoRuleInput {
-  scope: "global" | "service"
-  mode?: "block" | "allow"
-  service_id?: string | null
-  countries: string[]
-}
-
-export interface GeoIPStatus {
-  present: boolean
-  source?: string
-  filename?: string
-  size?: number
-  updated_at?: string
-  dir: string
-}
-
-export interface ApiToken {
-  id: string
-  name: string
-  user_id?: string | null
-  last_used_at?: string | null
-  expires_at?: string | null
-  revoked: boolean
-  created_at: string
-  token?: string // only present on creation
-}
-
-export interface AuditEntry {
-  id: string
-  actor: string
-  action: string
-  target?: string
-  detail?: string
-  created_at: string
-}
-
-export interface Overview {
-  services: number
-  waf_services: number
-  detections_24h: number
-  blocked_24h: number
-  requests_24h: number
-  active_blocks: number
-  activity: { hour: string; detections: number; blocked: number; requests: number }[]
-  by_service: { service_id: string; detections_24h: number }[]
-}
-
-export interface AccessEvent {
-  id: string
-  ts: string
-  service_id?: string | null
-  host: string
-  client_ip: string
-  method: string
-  path: string
-  query?: string
-  status: number
-  duration_ms: number
-  bytes: number
-  user_agent?: string
-}
-
-export interface AccessStats {
-  total: number
-  status: { "2xx": number; "3xx": number; "4xx": number; "5xx": number }
-  bytes: number
-  avg_ms: number
-  p95_ms: number
-  series: { bucket: string; requests: number; errors: number }[]
-  top_paths: { path: string; count: number }[]
-}
-
-export interface AccessQuery {
-  service_id?: string
-  client_ip?: string
-  method?: string
-  path?: string
-  status?: number
-  since?: string
-  limit?: number
-}
-
-export interface WafEventQuery {
-  service_id?: string
-  path?: string
-  client_ip?: string
-  rule_id?: number
-  since?: string
-  limit?: number
-}
+export type WafEventQuery = NonNullable<paths["/waf-events"]["get"]["parameters"]["query"]>
+export type AccessQuery = NonNullable<paths["/access-events"]["get"]["parameters"]["query"]>
 
 export const api = {
   // meta
-  getVersion: () => request<{ version: string }>("GET", "/version"),
+  getVersion: () => client.GET("/version").then(unwrap),
 
   // auth
   setup: (username: string, password: string) =>
-    request<LoginResponse>("POST", "/auth/setup", { username, password }),
-  setupState: () => request<{ needs_setup: boolean }>("GET", "/auth/state"),
+    client.POST("/auth/setup", { body: { username, password } }).then(unwrap),
+  setupState: () => client.GET("/auth/state").then(unwrap),
   login: (username: string, password: string) =>
-    request<LoginResponse>("POST", "/auth/login", { username, password }),
-  logout: () => request<void>("POST", "/auth/logout"),
-  me: () => request<User>("GET", "/auth/me"),
+    client.POST("/auth/login", { body: { username, password } }).then(unwrap),
+  logout: () => client.POST("/auth/logout").then(unwrap),
+  me: () => client.GET("/auth/me").then(unwrap),
 
   // dashboard
-  overview: () => request<Overview>("GET", "/overview"),
+  overview: () => client.GET("/overview").then(unwrap),
 
   // services
-  listServices: () => request<Service[]>("GET", "/services"),
-  getService: (id: string) => request<Service>("GET", `/services/${id}`),
-  createService: (input: ServiceInput) => request<Service>("POST", "/services", input),
-  updateService: (id: string, input: ServiceUpdate) => request<Service>("PATCH", `/services/${id}`, input),
-  deleteService: (id: string) => request<void>("DELETE", `/services/${id}`),
+  listServices: () => client.GET("/services").then(unwrap),
+  getService: (id: string) => client.GET("/services/{id}", { params: { path: { id } } }).then(unwrap),
+  createService: (input: ServiceInput) => client.POST("/services", { body: input }).then(unwrap),
+  updateService: (id: string, input: ServiceUpdate) =>
+    client.PATCH("/services/{id}", { params: { path: { id } }, body: input }).then(unwrap),
+  deleteService: (id: string) => client.DELETE("/services/{id}", { params: { path: { id } } }).then(unwrap),
 
   // waf
-  listWafEvents: (q: WafEventQuery = {}) => request<WafEvent[]>("GET", `/waf-events${qs(q)}`),
+  listWafEvents: (q: WafEventQuery = {}) => client.GET("/waf-events", { params: { query: q } }).then(unwrap),
   topTriggers: (q: { service_id?: string; since?: string; limit?: number } = {}) =>
-    request<WafTrigger[]>("GET", `/waf-events/top${qs(q)}`),
-  listAccessEvents: (q: AccessQuery = {}) => request<AccessEvent[]>("GET", `/access-events${qs(q)}`),
+    client.GET("/waf-events/top", { params: { query: q } }).then(unwrap),
+  listAccessEvents: (q: AccessQuery = {}) => client.GET("/access-events", { params: { query: q } }).then(unwrap),
   accessStats: (q: { service_id?: string; since?: string } = {}) =>
-    request<AccessStats>("GET", `/access-events/stats${qs(q)}`),
-  listExclusions: () => request<WafExclusion[]>("GET", "/waf-exclusions"),
-  createExclusion: (input: ExclusionInput) => request<WafExclusion>("POST", "/waf-exclusions", input),
-  deleteExclusion: (id: string) => request<void>("DELETE", `/waf-exclusions/${id}`),
+    client.GET("/access-events/stats", { params: { query: q } }).then(unwrap),
+  listExclusions: () => client.GET("/waf-exclusions").then(unwrap),
+  createExclusion: (input: ExclusionInput) => client.POST("/waf-exclusions", { body: input }).then(unwrap),
+  deleteExclusion: (id: string) =>
+    client.DELETE("/waf-exclusions/{id}", { params: { path: { id } } }).then(unwrap),
+
+  // custom raw-SecLang rules (advanced)
+  listWafCustomRules: () => client.GET("/waf-custom-rules").then(unwrap),
+  createWafCustomRule: (input: WafCustomRuleInput) =>
+    client.POST("/waf-custom-rules", { body: input }).then(unwrap),
+  updateWafCustomRule: (id: string, input: WafCustomRuleInput) =>
+    client.PATCH("/waf-custom-rules/{id}", { params: { path: { id } }, body: input }).then(unwrap),
+  deleteWafCustomRule: (id: string) =>
+    client.DELETE("/waf-custom-rules/{id}", { params: { path: { id } } }).then(unwrap),
 
   // blocklist
-  listBlocklist: () => request<Block[]>("GET", "/blocklist"),
-  createBlock: (input: BlockInput) => request<Block>("POST", "/blocklist", input),
-  updateBlock: (id: string, input: BlockInput) => request<Block>("PATCH", `/blocklist/${id}`, input),
-  deleteBlock: (id: string) => request<void>("DELETE", `/blocklist/${id}`),
+  listBlocklist: () => client.GET("/blocklist").then(unwrap),
+  createBlock: (input: BlockInput) => client.POST("/blocklist", { body: input }).then(unwrap),
+  updateBlock: (id: string, input: BlockInput) =>
+    client.PATCH("/blocklist/{id}", { params: { path: { id } }, body: input }).then(unwrap),
+  deleteBlock: (id: string) => client.DELETE("/blocklist/{id}", { params: { path: { id } } }).then(unwrap),
 
   // rate limits
-  listRateLimits: () => request<RateLimit[]>("GET", "/rate-limits"),
-  createRateLimit: (input: RateLimitInput) => request<RateLimit>("POST", "/rate-limits", input),
-  updateRateLimit: (id: string, input: RateLimitInput) => request<RateLimit>("PATCH", `/rate-limits/${id}`, input),
-  deleteRateLimit: (id: string) => request<void>("DELETE", `/rate-limits/${id}`),
+  listRateLimits: () => client.GET("/rate-limits").then(unwrap),
+  createRateLimit: (input: RateLimitInput) => client.POST("/rate-limits", { body: input }).then(unwrap),
+  updateRateLimit: (id: string, input: RateLimitInput) =>
+    client.PATCH("/rate-limits/{id}", { params: { path: { id } }, body: input }).then(unwrap),
+  deleteRateLimit: (id: string) =>
+    client.DELETE("/rate-limits/{id}", { params: { path: { id } } }).then(unwrap),
 
   // geo blocking
-  listGeoRules: () => request<GeoRule[]>("GET", "/geo-rules"),
-  createGeoRule: (input: GeoRuleInput) => request<GeoRule>("POST", "/geo-rules", input),
-  updateGeoRule: (id: string, input: GeoRuleInput) => request<GeoRule>("PATCH", `/geo-rules/${id}`, input),
-  deleteGeoRule: (id: string) => request<void>("DELETE", `/geo-rules/${id}`),
+  listGeoRules: () => client.GET("/geo-rules").then(unwrap),
+  createGeoRule: (input: GeoRuleInput) => client.POST("/geo-rules", { body: input }).then(unwrap),
+  updateGeoRule: (id: string, input: GeoRuleInput) =>
+    client.PATCH("/geo-rules/{id}", { params: { path: { id } }, body: input }).then(unwrap),
+  deleteGeoRule: (id: string) => client.DELETE("/geo-rules/{id}", { params: { path: { id } } }).then(unwrap),
 
   // geoip database source
-  geoipStatus: () => request<GeoIPStatus>("GET", "/geoip"),
-  geoipDBIP: () => request<GeoIPStatus>("POST", "/geoip/dbip"),
-  geoipMaxMind: (license_key: string) => request<GeoIPStatus>("POST", "/geoip/maxmind", { license_key }),
-  geoipDelete: () => request<void>("DELETE", "/geoip"),
+  geoipStatus: () => client.GET("/geoip").then(unwrap),
+  geoipDBIP: () => client.POST("/geoip/dbip").then(unwrap),
+  geoipMaxMind: (license_key: string) =>
+    client.POST("/geoip/maxmind", { body: { license_key } }).then(unwrap),
+  geoipDelete: () => client.DELETE("/geoip").then(unwrap),
+  // Multipart upload stays hand-rolled (FormData sets its own boundary header);
+  // the response type still comes from the generated schema.
   geoipUpload: async (file: File): Promise<GeoIPStatus> => {
     const fd = new FormData()
     fd.append("file", file)
@@ -395,21 +182,23 @@ export const api = {
   },
 
   // accounts
-  listUsers: () => request<User[]>("GET", "/users"),
+  listUsers: () => client.GET("/users").then(unwrap),
   createUser: (username: string, password: string) =>
-    request<User>("POST", "/users", { username, password }),
-  deleteUser: (id: string) => request<void>("DELETE", `/users/${id}`),
-  listApiTokens: () => request<ApiToken[]>("GET", "/api-tokens"),
-  createApiToken: (name: string) => request<ApiToken>("POST", "/api-tokens", { name }),
-  revokeApiToken: (id: string) => request<void>("DELETE", `/api-tokens/${id}`),
-  listAuditLog: (limit?: number) => request<AuditEntry[]>("GET", `/audit-log${qs({ limit })}`),
+    client.POST("/users", { body: { username, password } }).then(unwrap),
+  deleteUser: (id: string) => client.DELETE("/users/{id}", { params: { path: { id } } }).then(unwrap),
+  listApiTokens: () => client.GET("/api-tokens").then(unwrap),
+  createApiToken: (name: string) => client.POST("/api-tokens", { body: { name } }).then(unwrap),
+  revokeApiToken: (id: string) =>
+    client.DELETE("/api-tokens/{id}", { params: { path: { id } } }).then(unwrap),
+  listAuditLog: (limit?: number) => client.GET("/audit-log", { params: { query: { limit } } }).then(unwrap),
 
   // settings
-  getSettings: () => request<Settings>("GET", "/settings"),
-  updateSettings: (input: Partial<Settings>) => request<Settings>("PATCH", "/settings", input),
+  getSettings: () => client.GET("/settings").then(unwrap),
+  updateSettings: (input: Partial<Settings>) => client.PATCH("/settings", { body: input }).then(unwrap),
 
   // custom TLS certificates
-  listCertificates: () => request<Certificate[]>("GET", "/certificates"),
-  uploadCertificate: (input: CertificateInput) => request<Certificate>("POST", "/certificates", input),
-  deleteCertificate: (domain: string) => request<void>("DELETE", `/certificates/${encodeURIComponent(domain)}`),
+  listCertificates: () => client.GET("/certificates").then(unwrap),
+  uploadCertificate: (input: CertificateInput) => client.POST("/certificates", { body: input }).then(unwrap),
+  deleteCertificate: (domain: string) =>
+    client.DELETE("/certificates/{domain}", { params: { path: { domain } } }).then(unwrap),
 }

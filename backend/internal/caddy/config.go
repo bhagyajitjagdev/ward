@@ -77,6 +77,7 @@ func certForHost(cc []CustomCert, host string) *CustomCert {
 type Input struct {
 	Services     []model.Service
 	Exclusions   []model.WAFExclusion
+	CustomRules  []model.WAFCustomRule
 	Blocks       []model.BlockedIP
 	RateLimits   []model.RateLimit
 	GeoRules     []model.GeoRule
@@ -100,6 +101,22 @@ func Generate(in Input, opt Options) ([]byte, error) {
 			globalExcl = append(globalExcl, ex.SecLang)
 		case ex.ServiceID != nil:
 			exclByService[*ex.ServiceID] = append(exclByService[*ex.ServiceID], ex.SecLang)
+		}
+	}
+
+	// User-authored raw SecLang lands in the same before-CRS slot, after the
+	// generated exclusions (deterministic order: exclusions, then custom rules).
+	var globalRules []string
+	rulesByService := map[string][]string{}
+	for _, cr := range in.CustomRules {
+		if !cr.Enabled || strings.TrimSpace(cr.SecLang) == "" {
+			continue
+		}
+		switch {
+		case cr.Scope == "global":
+			globalRules = append(globalRules, cr.SecLang)
+		case cr.ServiceID != nil:
+			rulesByService[*cr.ServiceID] = append(rulesByService[*cr.ServiceID], cr.SecLang)
 		}
 	}
 
@@ -162,7 +179,10 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		if !s.Enabled || len(s.Upstreams) == 0 {
 			continue
 		}
+		// Before-CRS SecLang snippets for this service: generated exclusions first,
+		// then user-authored custom rules.
 		excl := append(append([]string{}, globalExcl...), exclByService[s.ID]...)
+		excl = append(append(excl, globalRules...), rulesByService[s.ID]...)
 		svcRoutes = append(svcRoutes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID]))
 		switch s.TLSMode {
 		case "none":

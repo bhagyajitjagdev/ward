@@ -123,6 +123,16 @@ func (s *Store) ListWAFEvents(ctx context.Context, f WAFEventFilter) ([]model.WA
 	return out, nil
 }
 
+// PruneWAFEvents deletes detections older than `before`; returns rows removed.
+func (s *Store) PruneWAFEvents(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.DB.NewDelete().Model((*wafEventRow)(nil)).Where("ts < ?", before).Exec(ctx)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // LatestCRSVersion returns the OWASP CRS version reported in the most recent
 // detection ("" if no events carry one yet). The ruleset is compiled into the
 // ward-caddy image, so this reflects what the running edge actually enforces —

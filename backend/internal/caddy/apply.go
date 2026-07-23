@@ -36,6 +36,10 @@ func (a *Applier) Apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	customRules, err := a.store.ListWAFCustomRules(ctx)
+	if err != nil {
+		return err
+	}
 	blocks, err := a.store.ListActiveBlocks(ctx)
 	if err != nil {
 		return err
@@ -55,6 +59,7 @@ func (a *Applier) Apply(ctx context.Context) error {
 	cfg, err := Generate(Input{
 		Services:     services,
 		Exclusions:   exclusions,
+		CustomRules:  customRules,
 		Blocks:       blocks,
 		RateLimits:   rateLimits,
 		GeoRules:     geoRules,

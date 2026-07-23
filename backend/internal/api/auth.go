@@ -51,6 +51,8 @@ func isPublic(method, path string) bool {
 		return true
 	case method == http.MethodGet && path == "/auth/state":
 		return true
+	case method == http.MethodGet && path == "/openapi.json":
+		return true
 	}
 	return false
 }

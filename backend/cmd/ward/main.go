@@ -49,6 +49,10 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		customRules, err := st.ListWAFCustomRules(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
 		blocks, err := st.ListActiveBlocks(ctx)
 		if err != nil {
 			log.Fatal(err)
@@ -67,6 +71,7 @@ func main() {
 		cfg, err := caddy.Generate(caddy.Input{
 			Services:     services,
 			Exclusions:   exclusions,
+			CustomRules:  customRules,
 			Blocks:       blocks,
 			RateLimits:   rateLimits,
 			GeoRules:     geoRules,
@@ -99,16 +104,19 @@ func main() {
 		go ing.Run(context.Background())
 	}
 
-	// Access-log read-path: tail Caddy's JSON access log into access_events, and
-	// prune it to the retention window (default 7 days).
+	// Access-log read-path: tail Caddy's JSON access log into access_events.
 	if accessPath := os.Getenv("WARD_ACCESS_LOG"); accessPath != "" {
 		ing := access.NewIngester(st, accessPath)
 		if ms, err := strconv.Atoi(os.Getenv("WARD_ACCESS_INTERVAL_MS")); err == nil && ms > 0 {
 			ing.SetInterval(time.Duration(ms) * time.Millisecond)
 		}
 		go ing.Run(context.Background())
-		go pruneAccessLoop(context.Background(), st)
 	}
+
+	// Prune access + WAF events to their retention windows (defaults 7d / 30d),
+	// hourly. Runs regardless of ingestion — a no-op on empty tables, and the
+	// windows still apply if ingestion is enabled later.
+	go pruneLoop(context.Background(), st)
 
 	// The API lives under /api; the embedded ward-ui (when compiled in and
 	// WARD_UI != "0") serves the SPA at everything else, on the same private port.
@@ -159,13 +167,19 @@ func env(k, def string) string {
 	return def
 }
 
-// pruneAccessLoop deletes access events past the retention window, hourly.
-func pruneAccessLoop(ctx context.Context, st *store.Store) {
+// pruneLoop deletes access events and WAF detections past their retention
+// windows, hourly. WAF events default to a longer window — they're the tuning
+// signal (Top Triggers, exclusion decisions), not just traffic history.
+func pruneLoop(ctx context.Context, st *store.Store) {
 	prune := func() {
+		now := time.Now().UTC()
 		days := st.AccessRetentionDays(ctx, 7)
-		before := time.Now().UTC().AddDate(0, 0, -days)
-		if n, err := st.PruneAccessEvents(ctx, before); err == nil && n > 0 {
+		if n, err := st.PruneAccessEvents(ctx, now.AddDate(0, 0, -days)); err == nil && n > 0 {
 			log.Printf("access pruner: removed %d events older than %dd", n, days)
+		}
+		days = st.WAFRetentionDays(ctx, 30)
+		if n, err := st.PruneWAFEvents(ctx, now.AddDate(0, 0, -days)); err == nil && n > 0 {
+			log.Printf("waf pruner: removed %d detections older than %dd", n, days)
 		}
 	}
 	prune()

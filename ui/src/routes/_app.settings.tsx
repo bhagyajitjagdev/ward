@@ -33,6 +33,8 @@ function SettingsPage() {
 
         <RetentionSection />
 
+        <WafRetentionSection />
+
         <Section title="Appearance" description="Theme for this browser.">
           <Segmented
             options={[
@@ -186,6 +188,37 @@ function RetentionSection() {
           <SelectItem value="1">1 day</SelectItem>
           <SelectItem value="3">3 days</SelectItem>
           <SelectItem value="7">7 days</SelectItem>
+        </SelectContent>
+      </Select>
+    </Section>
+  )
+}
+
+function WafRetentionSection() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const days = data?.waf_retention_days ?? 30
+  const save = useMutation({
+    mutationFn: (d: number) => api.updateSettings({ waf_retention_days: d }),
+    onSuccess: (s) => {
+      qc.setQueryData(["settings"], s)
+      toast.success(`WAF detections kept ${s.waf_retention_days} days`)
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save"),
+  })
+  return (
+    <Section
+      title="WAF-event retention"
+      description="How long WAF detections are kept. They feed Top Triggers and exclusion decisions, so keep enough history to tune against."
+    >
+      <Select value={String(days)} onValueChange={(v) => save.mutate(Number(v))}>
+        <SelectTrigger className="w-40">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="7">7 days</SelectItem>
+          <SelectItem value="30">30 days</SelectItem>
+          <SelectItem value="90">90 days</SelectItem>
         </SelectContent>
       </Select>
     </Section>

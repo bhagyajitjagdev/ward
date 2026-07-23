@@ -36,6 +36,7 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.healthz)
 	mux.HandleFunc("GET /version", h.version)
+	mux.HandleFunc("GET /openapi.json", h.openapiSpec)
 
 	// auth + accounts
 	mux.HandleFunc("GET /auth/state", h.authState)
@@ -65,6 +66,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /waf-exclusions", h.listExclusions)
 	mux.HandleFunc("POST /waf-exclusions", h.createExclusion)
 	mux.HandleFunc("DELETE /waf-exclusions/{id}", h.deleteExclusion)
+	mux.HandleFunc("GET /waf-custom-rules", h.listWAFCustomRules)
+	mux.HandleFunc("POST /waf-custom-rules", h.createWAFCustomRule)
+	mux.HandleFunc("PATCH /waf-custom-rules/{id}", h.updateWAFCustomRule)
+	mux.HandleFunc("DELETE /waf-custom-rules/{id}", h.deleteWAFCustomRule)
 	mux.HandleFunc("GET /blocklist", h.listBlocks)
 	mux.HandleFunc("POST /blocklist", h.createBlock)
 	mux.HandleFunc("PATCH /blocklist/{id}", h.updateBlock)
