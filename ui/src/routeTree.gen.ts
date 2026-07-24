@@ -27,7 +27,9 @@ import { Route as AppBlocklistRouteImport } from './routes/_app.blocklist'
 import { Route as AppAuditRouteImport } from './routes/_app.audit'
 import { Route as AppAccessRouteImport } from './routes/_app.access'
 import { Route as AppServicesIndexRouteImport } from './routes/_app.services.index'
+import { Route as AppServicesNewRouteImport } from './routes/_app.services.new'
 import { Route as AppServicesIdRouteImport } from './routes/_app.services.$id'
+import { Route as AppServicesIdEditRouteImport } from './routes/_app.services.$id_.edit'
 
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
@@ -118,9 +120,19 @@ const AppServicesIndexRoute = AppServicesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppServicesRoute,
 } as any)
+const AppServicesNewRoute = AppServicesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AppServicesRoute,
+} as any)
 const AppServicesIdRoute = AppServicesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
+  getParentRoute: () => AppServicesRoute,
+} as any)
+const AppServicesIdEditRoute = AppServicesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
   getParentRoute: () => AppServicesRoute,
 } as any)
 
@@ -142,7 +154,9 @@ export interface FileRoutesByFullPath {
   '/users': typeof AppUsersRoute
   '/waf-events': typeof AppWafEventsRoute
   '/services/$id': typeof AppServicesIdRoute
+  '/services/new': typeof AppServicesNewRoute
   '/services/': typeof AppServicesIndexRoute
+  '/services/$id/edit': typeof AppServicesIdEditRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -161,7 +175,9 @@ export interface FileRoutesByTo {
   '/waf-events': typeof AppWafEventsRoute
   '/': typeof AppIndexRoute
   '/services/$id': typeof AppServicesIdRoute
+  '/services/new': typeof AppServicesNewRoute
   '/services': typeof AppServicesIndexRoute
+  '/services/$id/edit': typeof AppServicesIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -183,7 +199,9 @@ export interface FileRoutesById {
   '/_app/waf-events': typeof AppWafEventsRoute
   '/_app/': typeof AppIndexRoute
   '/_app/services/$id': typeof AppServicesIdRoute
+  '/_app/services/new': typeof AppServicesNewRoute
   '/_app/services/': typeof AppServicesIndexRoute
+  '/_app/services/$id_/edit': typeof AppServicesIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -205,7 +223,9 @@ export interface FileRouteTypes {
     | '/users'
     | '/waf-events'
     | '/services/$id'
+    | '/services/new'
     | '/services/'
+    | '/services/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -224,7 +244,9 @@ export interface FileRouteTypes {
     | '/waf-events'
     | '/'
     | '/services/$id'
+    | '/services/new'
     | '/services'
+    | '/services/$id/edit'
   id:
     | '__root__'
     | '/_app'
@@ -245,7 +267,9 @@ export interface FileRouteTypes {
     | '/_app/waf-events'
     | '/_app/'
     | '/_app/services/$id'
+    | '/_app/services/new'
     | '/_app/services/'
+    | '/_app/services/$id_/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -382,6 +406,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppServicesIndexRouteImport
       parentRoute: typeof AppServicesRoute
     }
+    '/_app/services/new': {
+      id: '/_app/services/new'
+      path: '/new'
+      fullPath: '/services/new'
+      preLoaderRoute: typeof AppServicesNewRouteImport
+      parentRoute: typeof AppServicesRoute
+    }
     '/_app/services/$id': {
       id: '/_app/services/$id'
       path: '/$id'
@@ -389,17 +420,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppServicesIdRouteImport
       parentRoute: typeof AppServicesRoute
     }
+    '/_app/services/$id_/edit': {
+      id: '/_app/services/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/services/$id/edit'
+      preLoaderRoute: typeof AppServicesIdEditRouteImport
+      parentRoute: typeof AppServicesRoute
+    }
   }
 }
 
 interface AppServicesRouteChildren {
   AppServicesIdRoute: typeof AppServicesIdRoute
+  AppServicesNewRoute: typeof AppServicesNewRoute
   AppServicesIndexRoute: typeof AppServicesIndexRoute
+  AppServicesIdEditRoute: typeof AppServicesIdEditRoute
 }
 
 const AppServicesRouteChildren: AppServicesRouteChildren = {
   AppServicesIdRoute: AppServicesIdRoute,
+  AppServicesNewRoute: AppServicesNewRoute,
   AppServicesIndexRoute: AppServicesIndexRoute,
+  AppServicesIdEditRoute: AppServicesIdEditRoute,
 }
 
 const AppServicesRouteWithChildren = AppServicesRoute._addFileChildren(

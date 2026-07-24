@@ -8,13 +8,6 @@ import { certForHost } from "@/lib/certs"
 import { PageHeader, StatusDot, SeverityBadge, Mono, ago, normalizeSeverity } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
 import type { Service, WafMode } from "@/lib/api"
-import {
-  ServiceFormFields,
-  serviceToForm,
-  formToInput,
-  serviceFormValid,
-  type ServiceFormState,
-} from "@/components/service-form"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -82,7 +75,11 @@ function ServiceDetailPage() {
           description={svc.public_hostname}
           actions={
             <>
-              <EditDialog service={svc} />
+              <Button asChild variant="outline">
+                <Link to="/services/$id/edit" params={{ id: svc.id }}>
+                  <Pencil className="size-4" /> Edit
+                </Link>
+              </Button>
               <DeleteDialog service={svc} />
             </>
           }
@@ -254,64 +251,6 @@ function CountRow({ label, value, to }: { label: string; value: number; to: "/ex
       <span className="text-muted-foreground">{label}</span>
       <span className="font-mono tabular-nums">{value}</span>
     </Link>
-  )
-}
-
-function EditDialog({ service }: { service: Service }) {
-  const qc = useQueryClient()
-  const [open, setOpen] = useState(false)
-  const [form, setForm] = useState<ServiceFormState>(() => serviceToForm(service))
-
-  // Reset the form to the service's current values whenever the dialog opens, so a
-  // cancelled edit doesn't leave stale local state behind on the next open.
-  function onOpenChange(next: boolean) {
-    if (next) setForm(serviceToForm(service))
-    setOpen(next)
-  }
-
-  const save = useMutation({
-    mutationFn: () => api.updateService(service.id, formToInput(form)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["service", service.id] })
-      qc.invalidateQueries({ queryKey: ["services"] })
-      qc.invalidateQueries({ queryKey: ["overview"] })
-      toast.success("Service updated", { description: "Config regenerated and applied to the edge." })
-      setOpen(false)
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't update the service"),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button variant="outline">
-          <Pencil className="size-4" /> Edit
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Edit service</DialogTitle>
-          <DialogDescription>Changes regenerate the Caddy route and apply to the edge, with a rollback snapshot.</DialogDescription>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (serviceFormValid(form)) save.mutate()
-          }}
-          className="space-y-6"
-        >
-          <ServiceFormFields form={form} onChange={setForm} mode="edit" />
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!serviceFormValid(form) || save.isPending}>
-              {save.isPending ? "Saving…" : "Save changes"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   )
 }
 

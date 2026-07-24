@@ -1,31 +1,13 @@
-import { useState } from "react"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
 import { Plus, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PageHeader, StatusDot, Mono } from "@/components/console"
 import { useServices } from "@/data/queries"
-import { api, ApiError } from "@/lib/api"
+import { api } from "@/lib/api"
 import type { Service, WafMode } from "@/lib/api"
-import {
-  ServiceFormFields,
-  emptyServiceForm,
-  formToInput,
-  serviceFormValid,
-  type ServiceFormState,
-} from "@/components/service-form"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 
 export const Route = createFileRoute("/_app/services/")({
   component: ServicesPage,
@@ -43,7 +25,13 @@ function ServicesPage() {
         eyebrow="Edge"
         title="Services"
         description="Backends Ward reverse-proxies and protects. Each becomes a Caddy route with its own WAF, TLS, and load-balancing."
-        actions={<CreateServiceDialog />}
+        actions={
+          <Button asChild>
+            <Link to="/services/new">
+              <Plus className="size-4" /> Add service
+            </Link>
+          </Button>
+        }
       />
 
       <div className="overflow-hidden rounded-xl border">
@@ -190,55 +178,3 @@ function TlsBadge({ mode }: { mode: Service["tls_mode"] }) {
   )
 }
 
-function CreateServiceDialog() {
-  const qc = useQueryClient()
-  const [open, setOpen] = useState(false)
-  const [form, setForm] = useState<ServiceFormState>(emptyServiceForm())
-
-  const create = useMutation({
-    mutationFn: () => api.createService(formToInput(form)),
-    onSuccess: (svc) => {
-      qc.invalidateQueries({ queryKey: ["services"] })
-      qc.invalidateQueries({ queryKey: ["overview"] })
-      toast.success(`Service “${svc.name}” created`, { description: "Route generated and applied to the edge." })
-      setOpen(false)
-      setForm(emptyServiceForm())
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't create the service"),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <Plus className="size-4" /> Add service
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Add service</DialogTitle>
-          <DialogDescription>
-            Ward generates the Caddy route, validates it, and applies it to the edge — with a snapshot you can roll back to.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (serviceFormValid(form)) create.mutate()
-          }}
-          className="space-y-6"
-        >
-          <ServiceFormFields form={form} onChange={setForm} mode="create" />
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!serviceFormValid(form) || create.isPending}>
-              {create.isPending ? "Creating…" : "Create service"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
