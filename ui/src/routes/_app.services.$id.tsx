@@ -10,6 +10,7 @@ import { api, ApiError } from "@/lib/api"
 import type { Service, WafMode } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { TokenInput } from "@/components/ui/token-input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -62,7 +63,11 @@ function ServiceDetailPage() {
 
   const effectiveWafMode: WafMode = svc.waf_mode || settings?.waf_engine_mode || "DetectionOnly"
   // Match by SAN, not the storage-folder name — a cert named sv1 also serves sv2 if sv2 is in its SAN.
-  const customCert = svc.tls_mode === "custom" ? certForHost(certificates, svc.public_hostname) : undefined
+  // A custom cert must cover every hostname (backend enforces); show the one that does.
+  const customCert =
+    svc.tls_mode === "custom"
+      ? svc.public_hostnames.map((h) => certForHost(certificates, h)).find(Boolean)
+      : undefined
 
   return (
     <div className="space-y-8">
@@ -105,8 +110,18 @@ function ServiceDetailPage() {
                 </span>
               )}
             </Field>
-            <Field label="Public hostname" mono>
-              {svc.public_hostname}
+            <Field label={svc.public_hostnames.length > 1 ? "Public hostnames" : "Public hostname"} mono>
+              {svc.public_hostnames.length > 1 ? (
+                <div className="flex flex-wrap gap-1">
+                  {svc.public_hostnames.map((h) => (
+                    <span key={h} className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px]">
+                      {h}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                svc.public_hostname
+              )}
             </Field>
             <Field label="TLS">
               {svc.tls_mode === "custom" ? (
@@ -243,8 +258,8 @@ function EditDialog({ service }: { service: Service }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState(service.name)
-  const [hostname, setHostname] = useState(service.public_hostname)
-  const [upstreams, setUpstreams] = useState(service.upstreams.join(", "))
+  const [hostnames, setHostnames] = useState<string[]>(service.public_hostnames)
+  const [upstreams, setUpstreams] = useState<string[]>(service.upstreams)
   const [tlsMode, setTlsMode] = useState(service.tls_mode)
   const [lbPolicy, setLbPolicy] = useState(service.lb_policy)
   const [wafEnabled, setWafEnabled] = useState(service.waf_enabled)
@@ -255,11 +270,8 @@ function EditDialog({ service }: { service: Service }) {
     mutationFn: () =>
       api.updateService(service.id, {
         name: name.trim(),
-        public_hostname: hostname.trim(),
-        upstreams: upstreams
-          .split(",")
-          .map((u) => u.trim())
-          .filter(Boolean),
+        public_hostnames: hostnames,
+        upstreams,
         tls_mode: tlsMode,
         lb_policy: lbPolicy,
         waf_enabled: wafEnabled,
@@ -300,14 +312,17 @@ function EditDialog({ service }: { service: Service }) {
             <Input id="e-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="e-hostname">Public hostname</Label>
-            <Input id="e-hostname" className="font-mono" value={hostname} onChange={(e) => setHostname(e.target.value)} />
+            <Label htmlFor="e-hostnames">
+              Public hostnames <span className="font-normal text-muted-foreground">— Enter to add each</span>
+            </Label>
+            <TokenInput id="e-hostnames" ariaLabel="Public hostnames" value={hostnames} onChange={setHostnames} placeholder="api.acme.com" />
+            <p className="text-xs text-muted-foreground">All names route to this service — one WAF policy, one set of rules.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="e-upstreams">Upstreams</Label>
-            <Input id="e-upstreams" className="font-mono" value={upstreams} onChange={(e) => setUpstreams(e.target.value)} />
+            <TokenInput id="e-upstreams" ariaLabel="Upstreams" value={upstreams} onChange={setUpstreams} placeholder="api-1.mesh:8000" />
             <p className="text-xs text-muted-foreground">
-              host:port, comma-separated. Multiple upstreams are <strong>load-balanced replicas of the same app</strong> — not different apps.
+              host:port, Enter to add each. Multiple upstreams are <strong>load-balanced replicas of the same app</strong> — not different apps.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">

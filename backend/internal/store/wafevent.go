@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -174,18 +175,37 @@ func (s *Store) LeanWAFEventsSince(ctx context.Context, since time.Time) ([]Lean
 	return rows, err
 }
 
-// GetServiceIDByHost resolves a public hostname to a service id (nil if none).
+// GetServiceIDByHost resolves a hostname (primary or extra) to a service id (nil if
+// none). The primary is indexed — the common case; only if that misses do we scan
+// the extra-hostname lists (services are few).
 func (s *Store) GetServiceIDByHost(ctx context.Context, host string) (*string, error) {
+	host = strings.ToLower(strings.TrimSpace(host))
 	var row serviceRow
 	err := s.DB.NewSelect().Model(&row).Column("id").Where("public_hostname = ?", host).Limit(1).Scan(ctx)
-	if err == sql.ErrNoRows {
-		return nil, nil
+	if err == nil {
+		id := row.ID
+		return &id, nil
 	}
-	if err != nil {
+	if err != sql.ErrNoRows {
 		return nil, err
 	}
-	id := row.ID
-	return &id, nil
+	var rows []serviceRow
+	if err := s.DB.NewSelect().Model(&rows).Column("id", "extra_hostnames").Scan(ctx); err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		var extras []string
+		if r.ExtraHostnames != "" {
+			_ = json.Unmarshal([]byte(r.ExtraHostnames), &extras)
+		}
+		for _, h := range extras {
+			if strings.EqualFold(strings.TrimSpace(h), host) {
+				id := r.ID
+				return &id, nil
+			}
+		}
+	}
+	return nil, nil
 }
 
 // TriggerFilter narrows a TopTriggers query.

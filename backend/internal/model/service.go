@@ -6,15 +6,19 @@ import "time"
 // Service is a proxied backend Ward fronts. Upstreams is the list of dial
 // targets Caddy load-balances across.
 type Service struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	PublicHostname string    `json:"public_hostname"`
-	Upstreams      []string  `json:"upstreams"`
-	LBPolicy       string    `json:"lb_policy"`
-	TLSMode        string    `json:"tls_mode"`
-	WAFEnabled     bool      `json:"waf_enabled"`
-	WAFMode        string    `json:"waf_mode"` // "" = inherit global default | "DetectionOnly" | "On"
-	Enabled        bool      `json:"enabled"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// PublicHostname is the primary hostname (first of PublicHostnames) — kept as a
+	// read-only alias for a gentle transition; input may send it or PublicHostnames.
+	PublicHostname string `json:"public_hostname"`
+	// PublicHostnames is every hostname this service answers on. One route, one policy.
+	PublicHostnames []string  `json:"public_hostnames"`
+	Upstreams       []string  `json:"upstreams"`
+	LBPolicy        string    `json:"lb_policy"`
+	TLSMode         string    `json:"tls_mode"`
+	WAFEnabled      bool      `json:"waf_enabled"`
+	WAFMode         string    `json:"waf_mode"` // "" = inherit global default | "DetectionOnly" | "On"
+	Enabled         bool      `json:"enabled"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }

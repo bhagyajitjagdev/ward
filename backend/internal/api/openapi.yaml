@@ -886,11 +886,15 @@ components:
     Service:
       type: object
       required:
-        [id, name, public_hostname, upstreams, lb_policy, tls_mode, waf_enabled, waf_mode, enabled, created_at, updated_at]
+        [id, name, public_hostname, public_hostnames, upstreams, lb_policy, tls_mode, waf_enabled, waf_mode, enabled, created_at, updated_at]
       properties:
         id: { type: string }
         name: { type: string }
-        public_hostname: { type: string }
+        public_hostname: { type: string, description: "Primary hostname (first of public_hostnames); read-only alias." }
+        public_hostnames:
+          type: array
+          items: { type: string }
+          description: Every hostname this service answers on — one route, one policy.
         upstreams:
           type: array
           items: { type: string }
@@ -904,10 +908,14 @@ components:
 
     ServiceInput:
       type: object
-      required: [name, public_hostname, upstreams]
+      required: [name, public_hostnames, upstreams]
       properties:
         name: { type: string }
-        public_hostname: { type: string }
+        public_hostname: { type: string, description: "Optional single-hostname shorthand; public_hostnames wins if both are sent." }
+        public_hostnames:
+          type: array
+          items: { type: string }
+          description: One or more hostnames; the first is the primary.
         upstreams:
           type: array
           items: { type: string }

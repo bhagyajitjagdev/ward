@@ -104,7 +104,9 @@ function CertificatesPage() {
               // In use if any custom-mode service's hostname is covered by the cert's SAN
               // (matches config-gen's SAN loading — not just the storage-folder domain).
               const usedByServices = (services ?? []).filter(
-                (s) => s.tls_mode === "custom" && (c.subjects ?? []).some((san) => sanMatches(s.public_hostname, san)),
+                (s) =>
+                  s.tls_mode === "custom" &&
+                  s.public_hostnames.some((host) => (c.subjects ?? []).some((san) => sanMatches(host, san))),
               )
               return (
                 <tr key={c.domain} className="group transition-colors hover:bg-muted/40">

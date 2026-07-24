@@ -125,6 +125,63 @@ func TestGenerateWithCustomRules(t *testing.T) {
 	}
 }
 
+func TestGenerateMultiHostname(t *testing.T) {
+	services := []model.Service{
+		{ID: "s1", Name: "api", PublicHostname: "api.example.com",
+			PublicHostnames: []string{"api.example.com", "api.svc.example.com"},
+			Upstreams:       []string{"api:80"}, Enabled: true, WAFEnabled: true, TLSMode: "managed"},
+	}
+	out, err := Generate(Input{Services: services}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	routes := cfg["apps"].(map[string]any)["http"].(map[string]any)["servers"].(map[string]any)["edge"].(map[string]any)["routes"].([]any)
+
+	// One service route must match BOTH hostnames (single route, one policy).
+	var svcHosts []string
+	for _, r := range routes {
+		rm := r.(map[string]any)
+		match, ok := rm["match"].([]any)
+		if !ok {
+			continue
+		}
+		hosts, _ := match[0].(map[string]any)["host"].([]any)
+		// the service content route is the one whose inner handler is a subroute (not a redirect)
+		handle := rm["handle"].([]any)
+		if h0, _ := handle[0].(map[string]any); h0["handler"] == "subroute" && len(hosts) == 2 {
+			for _, h := range hosts {
+				svcHosts = append(svcHosts, h.(string))
+			}
+		}
+	}
+	if len(svcHosts) != 2 || svcHosts[0] != "api.example.com" || svcHosts[1] != "api.svc.example.com" {
+		t.Fatalf("service route should match both hostnames, got %v", svcHosts)
+	}
+
+	// Both names land in the managed-TLS subjects, and both get an HTTP->HTTPS redirect.
+	s := string(out)
+	for _, h := range []string{"api.example.com", "api.svc.example.com"} {
+		if !strings.Contains(s, h) {
+			t.Errorf("hostname %s missing from config", h)
+		}
+	}
+	redirects := 0
+	for _, r := range routes {
+		for _, h := range r.(map[string]any)["handle"].([]any) {
+			if h.(map[string]any)["handler"] == "static_response" {
+				redirects++
+			}
+		}
+	}
+	if redirects != 2 {
+		t.Errorf("want an HTTP->HTTPS redirect per hostname (2), got %d", redirects)
+	}
+}
+
 func TestGenerateWithCrowdSec(t *testing.T) {
 	services := []model.Service{
 		{ID: "s1", Name: "app", PublicHostname: "app.example.com", Upstreams: []string{"app:80"}, Enabled: true},

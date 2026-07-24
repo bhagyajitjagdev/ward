@@ -745,7 +745,10 @@ export interface components {
         Service: {
             id: string;
             name: string;
+            /** @description Primary hostname (first of public_hostnames); read-only alias. */
             public_hostname: string;
+            /** @description Every hostname this service answers on — one route, one policy. */
+            public_hostnames: string[];
             upstreams: string[];
             lb_policy: string;
             tls_mode: string;
@@ -759,7 +762,10 @@ export interface components {
         };
         ServiceInput: {
             name: string;
-            public_hostname: string;
+            /** @description Optional single-hostname shorthand; public_hostnames wins if both are sent. */
+            public_hostname?: string;
+            /** @description One or more hostnames; the first is the primary. */
+            public_hostnames: string[];
             upstreams: string[];
             lb_policy?: string;
             tls_mode?: string;

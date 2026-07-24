@@ -35,7 +35,8 @@ type serviceRow struct {
 
 	ID             string    `bun:"id,pk"`
 	Name           string    `bun:"name,notnull"`
-	PublicHostname string    `bun:"public_hostname,notnull"`
+	PublicHostname string    `bun:"public_hostname,notnull"` // primary — DB-unique
+	ExtraHostnames string    `bun:"extra_hostnames,notnull"` // JSON array of additional hostnames
 	Upstreams      string    `bun:"upstreams,notnull"`
 	LBPolicy       string    `bun:"lb_policy,notnull"`
 	TLSMode        string    `bun:"tls_mode,notnull"`
@@ -53,19 +54,78 @@ func (r serviceRow) toModel() (model.Service, error) {
 			return model.Service{}, err
 		}
 	}
+	extras := []string{}
+	if r.ExtraHostnames != "" {
+		if err := json.Unmarshal([]byte(r.ExtraHostnames), &extras); err != nil {
+			return model.Service{}, err
+		}
+	}
 	return model.Service{
-		ID:             r.ID,
-		Name:           r.Name,
-		PublicHostname: r.PublicHostname,
-		Upstreams:      ups,
-		LBPolicy:       r.LBPolicy,
-		TLSMode:        r.TLSMode,
-		WAFEnabled:     r.WAFEnabled,
-		WAFMode:        r.WAFMode,
-		Enabled:        r.Enabled,
-		CreatedAt:      r.CreatedAt,
-		UpdatedAt:      r.UpdatedAt,
+		ID:              r.ID,
+		Name:            r.Name,
+		PublicHostname:  r.PublicHostname,
+		PublicHostnames: append([]string{r.PublicHostname}, extras...),
+		Upstreams:       ups,
+		LBPolicy:        r.LBPolicy,
+		TLSMode:         r.TLSMode,
+		WAFEnabled:      r.WAFEnabled,
+		WAFMode:         r.WAFMode,
+		Enabled:         r.Enabled,
+		CreatedAt:       r.CreatedAt,
+		UpdatedAt:       r.UpdatedAt,
 	}, nil
+}
+
+// splitHostnames derives the primary hostname + a JSON array of the extras from a
+// service's PublicHostnames (falling back to the single PublicHostname alias).
+func splitHostnames(in model.Service) (primary, extrasJSON string, err error) {
+	names := in.PublicHostnames
+	if len(names) == 0 && in.PublicHostname != "" {
+		names = []string{in.PublicHostname}
+	}
+	if len(names) == 0 {
+		return "", "", errors.New("at least one hostname is required")
+	}
+	extras := names[1:]
+	if extras == nil {
+		extras = []string{}
+	}
+	b, err := json.Marshal(extras)
+	if err != nil {
+		return "", "", err
+	}
+	return names[0], string(b), nil
+}
+
+// HostnamesInUse returns which of `names` are already claimed by a service other
+// than excludeID (its primary or an extra) — enforces cross-service uniqueness of
+// the full hostname set, which no single DB constraint can express here.
+func (s *Store) HostnamesInUse(ctx context.Context, names []string, excludeID string) ([]string, error) {
+	var rows []serviceRow
+	if err := s.DB.NewSelect().Model(&rows).Column("id", "public_hostname", "extra_hostnames").Scan(ctx); err != nil {
+		return nil, err
+	}
+	claimed := map[string]bool{}
+	for _, r := range rows {
+		if r.ID == excludeID {
+			continue
+		}
+		claimed[strings.ToLower(r.PublicHostname)] = true
+		var extras []string
+		if r.ExtraHostnames != "" {
+			_ = json.Unmarshal([]byte(r.ExtraHostnames), &extras)
+		}
+		for _, h := range extras {
+			claimed[strings.ToLower(strings.TrimSpace(h))] = true
+		}
+	}
+	var dup []string
+	for _, n := range names {
+		if claimed[strings.ToLower(strings.TrimSpace(n))] {
+			dup = append(dup, n)
+		}
+	}
+	return dup, nil
 }
 
 // CreateService inserts a new service (server-assigned id + timestamps) and returns it.
@@ -78,11 +138,16 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 	if err != nil {
 		return model.Service{}, err
 	}
+	primary, extras, err := splitHostnames(in)
+	if err != nil {
+		return model.Service{}, err
+	}
 	now := time.Now().UTC()
 	row := serviceRow{
 		ID:             id.String(),
 		Name:           in.Name,
-		PublicHostname: in.PublicHostname,
+		PublicHostname: primary,
+		ExtraHostnames: extras,
 		Upstreams:      string(ups),
 		LBPolicy:       orDefault(in.LBPolicy, "round_robin"),
 		TLSMode:        orDefault(in.TLSMode, "internal"),
@@ -138,10 +203,15 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 	if err != nil {
 		return model.Service{}, err
 	}
+	primary, extras, err := splitHostnames(in)
+	if err != nil {
+		return model.Service{}, err
+	}
 	row := serviceRow{
 		ID:             id,
 		Name:           in.Name,
-		PublicHostname: in.PublicHostname,
+		PublicHostname: primary,
+		ExtraHostnames: extras,
 		Upstreams:      string(ups),
 		LBPolicy:       orDefault(in.LBPolicy, "round_robin"),
 		TLSMode:        orDefault(in.TLSMode, "internal"),
@@ -151,7 +221,7 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 		UpdatedAt:      time.Now().UTC(),
 	}
 	res, err := s.DB.NewUpdate().Model(&row).
-		Column("name", "public_hostname", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "enabled", "updated_at").
+		Column("name", "public_hostname", "extra_hostnames", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "enabled", "updated_at").
 		WherePK().Exec(ctx)
 	if err != nil {
 		if isUniqueViolation(err) {

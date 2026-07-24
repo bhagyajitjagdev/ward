@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
+import { TokenInput } from "@/components/ui/token-input"
 import {
   Dialog,
   DialogContent,
@@ -96,7 +97,17 @@ function ServicesPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <Mono>{s.public_hostname}</Mono>
+                  <div className="flex items-center gap-1.5">
+                    <Mono>{s.public_hostname}</Mono>
+                    {s.public_hostnames.length > 1 && (
+                      <span
+                        className="rounded border bg-muted/50 px-1 py-0.5 font-mono text-[10px] text-muted-foreground"
+                        title={s.public_hostnames.join(", ")}
+                      >
+                        +{s.public_hostnames.length - 1}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <WafBadge on={s.waf_enabled} />
@@ -180,8 +191,8 @@ function CreateServiceDialog() {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
-  const [hostname, setHostname] = useState("")
-  const [upstreams, setUpstreams] = useState("")
+  const [hostnames, setHostnames] = useState<string[]>([])
+  const [upstreams, setUpstreams] = useState<string[]>([])
   const [tlsMode, setTlsMode] = useState("managed")
   const [lbPolicy, setLbPolicy] = useState("round_robin")
   const [wafEnabled, setWafEnabled] = useState(true)
@@ -190,11 +201,8 @@ function CreateServiceDialog() {
     mutationFn: () =>
       api.createService({
         name: name.trim(),
-        public_hostname: hostname.trim(),
-        upstreams: upstreams
-          .split(",")
-          .map((u) => u.trim())
-          .filter(Boolean),
+        public_hostnames: hostnames,
+        upstreams,
         tls_mode: tlsMode,
         lb_policy: lbPolicy,
         waf_enabled: wafEnabled,
@@ -205,8 +213,8 @@ function CreateServiceDialog() {
       toast.success(`Service “${svc.name}” created`, { description: "Route generated and applied to the edge." })
       setOpen(false)
       setName("")
-      setHostname("")
-      setUpstreams("")
+      setHostnames([])
+      setUpstreams([])
       setTlsMode("managed")
       setLbPolicy("round_robin")
       setWafEnabled(true)
@@ -241,25 +249,28 @@ function CreateServiceDialog() {
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="app-api" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="hostname">Public hostname</Label>
-            <Input
-              id="hostname"
-              className="font-mono"
-              value={hostname}
-              onChange={(e) => setHostname(e.target.value)}
+            <Label htmlFor="hostnames">
+              Public hostnames <span className="font-normal text-muted-foreground">— Enter to add each</span>
+            </Label>
+            <TokenInput
+              id="hostnames"
+              ariaLabel="Public hostnames"
+              value={hostnames}
+              onChange={setHostnames}
               placeholder="api.acme.com"
             />
+            <p className="text-xs text-muted-foreground">All names route to this one service — one WAF policy, one set of rules.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="upstreams">
-              Upstreams <span className="font-normal text-muted-foreground">— comma-separated host:port</span>
+              Upstreams <span className="font-normal text-muted-foreground">— host:port, Enter to add each</span>
             </Label>
-            <Input
+            <TokenInput
               id="upstreams"
-              className="font-mono"
+              ariaLabel="Upstreams"
               value={upstreams}
-              onChange={(e) => setUpstreams(e.target.value)}
-              placeholder="api-1.mesh:8000, api-2.mesh:8000"
+              onChange={setUpstreams}
+              placeholder="api-1.mesh:8000"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">

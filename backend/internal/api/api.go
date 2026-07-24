@@ -220,14 +220,56 @@ func (h *Handler) listServices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, svcs)
 }
 
+// checkServiceHostnames normalizes in.PublicHostnames (trim/lowercase/dedupe, with a
+// fallback to the single PublicHostname alias), sets the primary alias, enforces
+// cross-service uniqueness (excluding excludeID), and — for custom TLS — that an
+// uploaded cert covers every name. Returns (code, msg); code 0 means OK.
+func (h *Handler) checkServiceHostnames(ctx context.Context, in *model.Service, excludeID string) (int, string) {
+	names := in.PublicHostnames
+	if len(names) == 0 && in.PublicHostname != "" {
+		names = []string{in.PublicHostname}
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, n := range names {
+		n = strings.ToLower(strings.TrimSpace(n))
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return http.StatusBadRequest, "at least one public hostname is required"
+	}
+	in.PublicHostnames = out
+	in.PublicHostname = out[0]
+
+	dup, err := h.store.HostnamesInUse(ctx, out, excludeID)
+	if err != nil {
+		return http.StatusInternalServerError, err.Error()
+	}
+	if len(dup) > 0 {
+		return http.StatusConflict, "hostname already used by another service: " + strings.Join(dup, ", ")
+	}
+	if in.TLSMode == "custom" {
+		for _, hn := range out {
+			if !certs.Covers(certs.Dir(), hn) {
+				return http.StatusBadRequest, "no uploaded certificate covers " + hn + " — upload one on the Certificates screen first"
+			}
+		}
+	}
+	return 0, ""
+}
+
 func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 	var in model.Service
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if in.Name == "" || in.PublicHostname == "" || len(in.Upstreams) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name, public_hostname and at least one upstream are required"})
+	if in.Name == "" || len(in.Upstreams) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and at least one upstream are required"})
 		return
 	}
 	if !validWAFMode(in.WAFMode) {
@@ -238,8 +280,8 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
 		return
 	}
-	if in.TLSMode == "custom" && !certs.Covers(certs.Dir(), in.PublicHostname) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no uploaded certificate covers " + in.PublicHostname + " — upload one on the Certificates screen first"})
+	if code, msg := h.checkServiceHostnames(r.Context(), &in, ""); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
 
@@ -280,8 +322,8 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if in.Name == "" || in.PublicHostname == "" || len(in.Upstreams) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name, public_hostname and at least one upstream are required"})
+	if in.Name == "" || len(in.Upstreams) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and at least one upstream are required"})
 		return
 	}
 	if !validWAFMode(in.WAFMode) {
@@ -292,8 +334,8 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
 		return
 	}
-	if in.TLSMode == "custom" && !certs.Covers(certs.Dir(), in.PublicHostname) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no uploaded certificate covers " + in.PublicHostname + " — upload one on the Certificates screen first"})
+	if code, msg := h.checkServiceHostnames(r.Context(), &in, r.PathValue("id")); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
 

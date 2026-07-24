@@ -69,6 +69,18 @@ func ResolveCustomCerts() []CustomCert {
 	return out
 }
 
+// serviceHostnames returns every hostname a service answers on (falling back to the
+// single PublicHostname alias for safety). One route matches them all.
+func serviceHostnames(s model.Service) []string {
+	if len(s.PublicHostnames) > 0 {
+		return s.PublicHostnames
+	}
+	if s.PublicHostname != "" {
+		return []string{s.PublicHostname}
+	}
+	return nil
+}
+
 // certForHost returns the uploaded cert whose SAN covers host (wildcard-aware), or
 // nil. One multi-SAN / wildcard cert therefore serves every host it lists — no need
 // to re-upload it per service.
@@ -198,19 +210,22 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		excl := append(append([]string{}, globalExcl...), exclByService[s.ID]...)
 		excl = append(append(excl, globalRules...), rulesByService[s.ID]...)
 		svcRoutes = append(svcRoutes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID]))
+		hostnames := serviceHostnames(s)
 		switch s.TLSMode {
 		case "none":
-			skipSubs = append(skipSubs, s.PublicHostname)
+			skipSubs = append(skipSubs, hostnames...)
 			continue // HTTP-only: no HTTPS to redirect to
 		case "managed":
-			managedSubs = append(managedSubs, s.PublicHostname)
+			managedSubs = append(managedSubs, hostnames...)
 		case "custom":
-			customSubs = append(customSubs, s.PublicHostname)
+			customSubs = append(customSubs, hostnames...)
 		default: // "internal" or unset → local self-signed CA
-			internalSubs = append(internalSubs, s.PublicHostname)
+			internalSubs = append(internalSubs, hostnames...)
 		}
-		// Any cert-bearing service forces HTTP -> HTTPS (a cert implies HTTPS).
-		redirectRoutes = append(redirectRoutes, httpsRedirectRoute(s.PublicHostname))
+		// Any cert-bearing service forces HTTP -> HTTPS (a cert implies HTTPS), per name.
+		for _, h := range hostnames {
+			redirectRoutes = append(redirectRoutes, httpsRedirectRoute(h))
+		}
 	}
 	// Redirects fire before the service content routes; skipped in the no-auto-HTTPS
 	// (dev) path, where there's no HTTPS to redirect to.
@@ -572,7 +587,7 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 	innerRoutes = append(innerRoutes, map[string]any{"handle": handlers})
 
 	return map[string]any{
-		"match": []any{map[string]any{"host": []string{s.PublicHostname}}},
+		"match": []any{map[string]any{"host": serviceHostnames(s)}},
 		"handle": []any{
 			map[string]any{"handler": "subroute", "routes": innerRoutes},
 		},
