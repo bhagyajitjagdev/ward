@@ -1,0 +1,33 @@
+name: renovate
+
+# Self-hosted Renovate — runs inside our own Actions, no third-party GitHub App.
+# It opens dependency-update PRs (Go modules, Docker base images, and the pinned
+# xcaddy modules via the custom manager in .github/renovate.json). Each PR is gated
+# by the e2e + build workflows; a human reviews the changelog and merges.
+#
+# Setup (one-time): create a fine-grained PAT with contents:write + pull-requests:write
+# on this repo and save it as the `RENOVATE_TOKEN` secret. A PAT (not GITHUB_TOKEN) is
+# required so Renovate's PRs actually trigger the e2e/images workflows — GitHub does
+# not run workflows on PRs opened by GITHUB_TOKEN.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: renovatebot/github-action@v41
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: "false"
+          LOG_LEVEL: info

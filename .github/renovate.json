@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits"],
+  "labels": ["dependencies"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Pinned xcaddy modules in caddy/Dockerfile (Dependabot can't see the --with lines)",
+      "fileMatch": ["^caddy/Dockerfile$"],
+      "matchStrings": ["--with\\s+(?<depName>github\\.com/[^@\\s]+)@(?<currentValue>v[0-9][^\\s\\\\]*)"],
+      "datasourceTemplate": "go"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "One PR for the whole compiled-in edge stack. A human syncs backend/internal/edge/versions.json + the io.ward.* labels to match — the e2e + edge unit tests fail the PR until they do.",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["caddy/Dockerfile"],
+      "groupName": "edge stack"
+    }
+  ]
+}

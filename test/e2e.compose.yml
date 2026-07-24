@@ -1,6 +1,12 @@
-# Dev integration harness for the full wedge loop: Ward configures a real
-# Caddy+Coraza, Coraza writes its audit log to a shared volume, Ward ingests it,
-# and Ward-authored exclusions flow back into the config. Fully in-network.
+# Dev + CI integration harness for the full stack: Ward configures a real
+# Caddy+Coraza, an appserver upstream serves echo/SSE/WebSocket, and the `tester`
+# drives Ward's API and asserts behaviour through the edge — all in-network, so the
+# flaky host↔container port-forward is never used.
+#
+#   docker compose -p wardtest -f test/e2e.compose.yml up --build --exit-code-from tester
+#
+# The tester's exit code is the result (0 = all checks passed). Tear down with
+#   docker compose -p wardtest -f test/e2e.compose.yml down -v
 services:
   caddy:
     build: ../caddy # custom Caddy+Coraza image
@@ -8,10 +14,25 @@ services:
     volumes:
       - ./bootstrap.json:/etc/caddy/bootstrap.json:ro
       - audit:/shared
+
+  # Legacy simple upstream — kept as a second dial target.
   whoami:
     image: traefik/whoami
+
+  # Rich upstream: /, ?q= (WAF payloads), /sse, /ws, /big (compression), /echo.
+  appserver:
+    image: golang:1.26
+    working_dir: /src
+    environment:
+      GOTOOLCHAIN: local
+    volumes:
+      - ./:/src:ro
+    command: go run ./appserver
+
   ward:
-    build: ../backend
+    build:
+      context: .. # repo root — backend/Dockerfile COPYs both backend/ and ui/
+      dockerfile: backend/Dockerfile
     user: "0:0" # test-only: read Caddy's root-written audit log (deploy aligns perms)
     environment:
       WARD_CADDY_ADMIN: http://caddy:2019
@@ -21,6 +42,22 @@ services:
       WARD_CADDY_AUTO_HTTPS: "${WARD_AUTO_HTTPS:-}" # set WARD_AUTO_HTTPS=1 to test managed/internal TLS
     volumes:
       - audit:/shared
-    depends_on: [caddy, whoami]
+    depends_on: [caddy, whoami, appserver]
+
+  # The e2e runner — drives Ward's API + asserts through the edge, exits non-zero on
+  # any failure so CI can gate on --exit-code-from tester.
+  tester:
+    image: golang:1.26
+    working_dir: /src
+    environment:
+      GOTOOLCHAIN: local
+      WARD_API: http://ward:8080/api
+      EDGE: http://caddy:80
+      UPSTREAM: appserver:8080
+    volumes:
+      - ./:/src:ro
+    command: go run ./e2e
+    depends_on: [caddy, ward, appserver]
+
 volumes:
   audit:

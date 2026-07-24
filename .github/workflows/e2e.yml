@@ -1,0 +1,28 @@
+name: e2e
+
+# Stands up the real stack (Caddy+Coraza + Ward + an upstream) and runs the
+# in-network harness (test/e2e). The tester's exit code gates the job, so a
+# dependency bump — Caddy, Coraza, the CRS, a module — that breaks proxying, the
+# WAF, exclusions, streaming, blocks, rate-limits, HTTP controls, etc. fails here
+# before it ships. Runs on every push to main and every PR (incl. Renovate's).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the e2e harness
+        run: >
+          docker compose -p wardtest -f test/e2e.compose.yml up
+          --build --exit-code-from tester --abort-on-container-exit
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -p wardtest -f test/e2e.compose.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -p wardtest -f test/e2e.compose.yml down -v
