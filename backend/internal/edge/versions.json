@@ -1,0 +1,9 @@
+{
+  "caddy": "v2.11.4",
+  "coraza": "v3.7.0",
+  "coraza_caddy": "v2.5.0",
+  "crs": "v4.25.0",
+  "crowdsec_bouncer": "v0.13.1",
+  "ratelimit": "v0.1.0",
+  "maxmind_geolocation": "v1.0.3"
+}

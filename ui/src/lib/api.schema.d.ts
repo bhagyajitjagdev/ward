@@ -815,6 +815,10 @@ export interface components {
             crowdsec_enabled?: boolean;
             /** @description Read-only — LAPI URL + key are set in the deployment. */
             crowdsec_configured?: boolean;
+            /** @description Read-only — versions of the components compiled into the ward-caddy image this release targets (component → version). Ground truth is the image's OCI labels. */
+            edge_versions?: {
+                [key: string]: string;
+            };
         };
         /** @description Only the fields present (non-zero) are applied. */
         SettingsUpdate: {

@@ -6,6 +6,7 @@ import (
 	"net/mail"
 	"strconv"
 
+	"github.com/bhagyajitjagdev/ward/backend/internal/edge"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 )
 
@@ -17,6 +18,9 @@ type settingsDTO struct {
 	CRSVersion          string `json:"crs_version"`           // read-only: OWASP CRS version the edge reported (from detections)
 	CrowdSecEnabled     *bool  `json:"crowdsec_enabled,omitempty"` // toggle the bouncer (pointer: distinguishes omitted from false on PATCH)
 	CrowdSecConfigured  bool   `json:"crowdsec_configured"`        // read-only: LAPI URL + key present (env)
+	// EdgeVersions is read-only: the components compiled into the ward-caddy image this
+	// release targets (component → version). Ground truth is the image's OCI labels.
+	EdgeVersions map[string]string `json:"edge_versions,omitempty"`
 }
 
 // validWAFMode reports whether m is a valid engine mode. Empty is valid only for a
@@ -36,6 +40,7 @@ func (h *Handler) currentSettings(r *http.Request) settingsDTO {
 		CRSVersion:          h.store.LatestCRSVersion(r.Context()),
 		CrowdSecEnabled:     &csEnabled,
 		CrowdSecConfigured:  configured,
+		EdgeVersions:        edge.Versions(),
 	}
 }
 

@@ -29,6 +29,8 @@ function SettingsPage() {
 
         <RulesetSection />
 
+        <EdgeSection />
+
         <TlsSection />
 
         <RetentionSection />
@@ -122,6 +124,43 @@ function RulesetSection() {
         <p className="text-xs text-muted-foreground">
           The running version appears here once the WAF logs its first detection.
         </p>
+      )}
+    </Section>
+  )
+}
+
+// EdgeSection lists the components compiled into the ward-caddy image this release
+// ships. Read-only — they move together with the Ward version. Values come from the
+// image's pinned build (kept in lockstep with caddy/Dockerfile); the authoritative
+// source for a running image is `docker inspect` (its OCI labels).
+function EdgeSection() {
+  const { data } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const versions = data?.edge_versions ?? {}
+  const rows: [string, string][] = [
+    ["Caddy", "caddy"],
+    ["Coraza", "coraza"],
+    ["OWASP CRS", "crs"],
+    ["CrowdSec bouncer", "crowdsec_bouncer"],
+    ["Rate limit", "ratelimit"],
+    ["GeoIP", "maxmind_geolocation"],
+  ]
+  const present = rows.filter(([, k]) => versions[k])
+  return (
+    <Section
+      title="Edge build"
+      description="The components compiled into the ward-caddy image this release runs. They move together — update by pulling a newer Ward release. For a running image, docker inspect shows the exact versions as OCI labels."
+    >
+      {present.length ? (
+        <div className="flex flex-wrap gap-2">
+          {present.map(([label, k]) => (
+            <span key={k} className="inline-flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-xs">
+              <span className="text-muted-foreground">{label}</span>
+              <Mono className="!text-xs">{versions[k]}</Mono>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">Unavailable.</p>
       )}
     </Section>
   )

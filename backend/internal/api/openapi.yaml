@@ -979,6 +979,10 @@ components:
           description: Read-only — OWASP CRS version the running edge reported.
         crowdsec_enabled: { type: boolean, description: Whether the CrowdSec bouncer is wired into the edge. }
         crowdsec_configured: { type: boolean, description: Read-only — LAPI URL + key are set in the deployment. }
+        edge_versions:
+          type: object
+          additionalProperties: { type: string }
+          description: Read-only — versions of the components compiled into the ward-caddy image this release targets (component → version). Ground truth is the image's OCI labels.
 
     SettingsUpdate:
       description: Only the fields present (non-zero) are applied.
