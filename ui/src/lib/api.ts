@@ -86,6 +86,8 @@ export type AuditEntry = S["AuditEntry"]
 export type Overview = S["Overview"]
 export type AccessEvent = S["AccessEvent"]
 export type AccessStats = S["AccessStats"]
+export type CrowdSecStatus = S["CrowdSecStatus"]
+export type CrowdSecDecision = S["CrowdSecDecision"]
 
 export type WafEventQuery = NonNullable<paths["/waf-events"]["get"]["parameters"]["query"]>
 export type AccessQuery = NonNullable<paths["/access-events"]["get"]["parameters"]["query"]>
@@ -195,6 +197,9 @@ export const api = {
   // settings
   getSettings: () => client.GET("/settings").then(unwrap),
   updateSettings: (input: Partial<Settings>) => client.PATCH("/settings", { body: input }).then(unwrap),
+
+  // crowdsec (read-only status + active decisions)
+  crowdsecStatus: () => client.GET("/crowdsec").then(unwrap),
 
   // custom TLS certificates
   listCertificates: () => client.GET("/certificates").then(unwrap),

@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Ban, Trash2, Pencil, AlertTriangle } from "lucide-react"
-import { PageHeader, Mono, ago, until, ModeBadge, ModeToggle } from "@/components/console"
+import { PageHeader, StatusDot, Mono, ago, until, ModeBadge, ModeToggle } from "@/components/console"
 import type { RuleMode } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
 import type { Block } from "@/lib/api"
@@ -160,7 +160,84 @@ function BlocklistPage() {
           </tbody>
         </table>
       </div>
+
+      <CrowdSecDecisions />
+
       <BlockDialog open={dialog.open} editing={dialog.editing} onOpenChange={(o) => setDialog((d) => ({ ...d, open: o }))} />
+    </div>
+  )
+}
+
+// CrowdSecDecisions lists the bans CrowdSec is currently enforcing at the edge —
+// read-only (the bouncer owns them; Ward only observes). Hidden entirely unless
+// CrowdSec is enabled, so the page stays clean for non-users.
+function CrowdSecDecisions() {
+  const { data: status } = useQuery({ queryKey: ["crowdsec"], queryFn: api.crowdsecStatus, refetchInterval: 10000 })
+  if (!status?.enabled) return null
+  const decisions = status.decisions ?? []
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="flex items-center gap-2">
+        <h2 className="font-heading text-sm font-semibold">CrowdSec decisions</h2>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          · enforced at the edge · read-only
+        </span>
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+          <StatusDot tone={status.reachable ? "ok" : "threat"} />
+          {status.reachable ? "LAPI up" : "LAPI down"}
+        </span>
+      </div>
+      <div className="overflow-hidden rounded-xl border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/30 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+              <th className="px-4 py-2.5 font-medium">IP / CIDR</th>
+              <th className="px-4 py-2.5 font-medium">Action</th>
+              <th className="px-4 py-2.5 font-medium">Scenario</th>
+              <th className="px-4 py-2.5 font-medium">Origin</th>
+              <th className="px-4 py-2.5 font-medium">Expires in</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {decisions.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                  {status.reachable
+                    ? "No active CrowdSec decisions — nothing's tripped a scenario."
+                    : "Can't reach the CrowdSec LAPI."}
+                </td>
+              </tr>
+            )}
+            {decisions.map((d) => (
+              <tr key={`${d.id}-${d.value}`} className="transition-colors hover:bg-muted/40">
+                <td className="px-4 py-3">
+                  <Mono className="font-medium">{d.value}</Mono>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex items-center rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] text-primary">
+                    {d.type || "ban"}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <Mono dim className="!text-xs">
+                    {d.scenario || "—"}
+                  </Mono>
+                </td>
+                <td className="px-4 py-3">
+                  <Mono dim className="!text-xs">
+                    {d.origin || "—"}
+                  </Mono>
+                </td>
+                <td className="px-4 py-3">
+                  <Mono dim className="!text-xs">
+                    {d.duration || "—"}
+                  </Mono>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

@@ -125,6 +125,58 @@ func TestGenerateWithCustomRules(t *testing.T) {
 	}
 }
 
+func TestGenerateWithCrowdSec(t *testing.T) {
+	services := []model.Service{
+		{ID: "s1", Name: "app", PublicHostname: "app.example.com", Upstreams: []string{"app:80"}, Enabled: true},
+	}
+	opt := DefaultOptions()
+	opt.DisableAutoHTTPS = true
+
+	// Disabled → no crowdsec app or handler.
+	out, err := Generate(Input{Services: services}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "crowdsec") {
+		t.Error("crowdsec must be absent when disabled")
+	}
+
+	// Enabled → app present, and the bouncer is the very first route handler.
+	opt.CrowdSecEnabled = true
+	opt.CrowdSecAPIURL = "http://crowdsec:8080/"
+	opt.CrowdSecAPIKey = "secret-key"
+	out, err = Generate(Input{Services: services}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Apps struct {
+			CrowdSec map[string]any `json:"crowdsec"`
+			HTTP     struct {
+				Servers struct {
+					Edge struct {
+						Routes []struct {
+							Handle []struct {
+								Handler string `json:"handler"`
+							} `json:"handle"`
+						} `json:"routes"`
+					} `json:"edge"`
+				} `json:"servers"`
+			} `json:"http"`
+		} `json:"apps"`
+	}
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Apps.CrowdSec["api_key"] != "secret-key" || cfg.Apps.CrowdSec["enable_hard_fails"] != false {
+		t.Errorf("crowdsec app not wired (fail-open expected): %#v", cfg.Apps.CrowdSec)
+	}
+	routes := cfg.Apps.HTTP.Servers.Edge.Routes
+	if len(routes) == 0 || len(routes[0].Handle) == 0 || routes[0].Handle[0].Handler != "crowdsec" {
+		t.Errorf("crowdsec must be the first route handler, got routes=%#v", routes)
+	}
+}
+
 func TestGenerateExclusionSecLang(t *testing.T) {
 	// prefix path + target → runtime rule with reserved id (backward-compatible form)
 	got := GenerateExclusionSecLang(90000001, 942100, "prefix", "/leads/batch", nil, "ARGS:id")

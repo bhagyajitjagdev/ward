@@ -1,10 +1,10 @@
 import { useState } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { AlertTriangle, Moon, Sun } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { PageHeader } from "@/components/console"
+import { PageHeader, StatusDot, Mono } from "@/components/console"
 import { useTheme } from "@/lib/theme"
 import { api, ApiError } from "@/lib/api"
 import type { WafMode } from "@/lib/api"
@@ -34,6 +34,8 @@ function SettingsPage() {
         <RetentionSection />
 
         <WafRetentionSection />
+
+        <CrowdSecSection />
 
         <Section title="Appearance" description="Theme for this browser.">
           <Segmented
@@ -253,6 +255,66 @@ function Section({
         </div>
       )}
     </section>
+  )
+}
+
+function CrowdSecSection() {
+  const qc = useQueryClient()
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const { data: status } = useQuery({ queryKey: ["crowdsec"], queryFn: api.crowdsecStatus, refetchInterval: 10000 })
+  const configured = settings?.crowdsec_configured ?? false
+  const enabled = settings?.crowdsec_enabled ?? false
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => api.updateSettings({ crowdsec_enabled: on }),
+    onSuccess: (s) => {
+      qc.setQueryData(["settings"], s)
+      qc.invalidateQueries({ queryKey: ["crowdsec"] })
+      toast.success(s.crowdsec_enabled ? "CrowdSec bouncer enabled at the edge" : "CrowdSec bouncer disabled")
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't change CrowdSec"),
+  })
+  const count = status?.decisions?.length ?? 0
+  return (
+    <Section
+      title="CrowdSec"
+      description="Community IP reputation + behavioral blocking. The agent detects from the access log, the edge bouncer enforces bans, and Ward observes decisions read-only — never in the request path."
+    >
+      {!configured ? (
+        <p className="text-xs text-muted-foreground">
+          Not configured. Set <Mono className="!text-[11px]">WARD_CROWDSEC_API_URL</Mono> and{" "}
+          <Mono className="!text-[11px]">WARD_CROWDSEC_API_KEY</Mono> in the deployment, then reload.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <Segmented
+            options={[
+              { value: "on", label: "Enabled" },
+              { value: "off", label: "Disabled" },
+            ]}
+            value={enabled ? "on" : "off"}
+            onChange={(v) => {
+              const on = v === "on"
+              if (on !== enabled) toggle.mutate(on)
+            }}
+          />
+          {enabled && (
+            <p className="flex items-center gap-2 text-xs">
+              <StatusDot tone={status?.reachable ? "ok" : "threat"} />
+              {status?.reachable ? (
+                <span className="text-muted-foreground">
+                  LAPI reachable · {count} active decision{count === 1 ? "" : "s"} —{" "}
+                  <Link to="/blocklist" className="underline hover:text-foreground">
+                    view in Blocklist
+                  </Link>
+                </span>
+              ) : (
+                <span className="text-red-500">LAPI unreachable{status?.error ? ` — ${status.error}` : ""}</span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+    </Section>
   )
 }
 

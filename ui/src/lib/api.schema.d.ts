@@ -649,6 +649,23 @@ export interface paths {
         patch: operations["updateSettings"];
         trace?: never;
     };
+    "/crowdsec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** CrowdSec status + active decisions (read-only; the bouncer enforces them) */
+        get: operations["crowdsecStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/certificates": {
         parameters: {
             query?: never;
@@ -759,6 +776,10 @@ export interface components {
             waf_retention_days: number;
             /** @description Read-only — OWASP CRS version the running edge reported. */
             crs_version?: string;
+            /** @description Whether the CrowdSec bouncer is wired into the edge. */
+            crowdsec_enabled?: boolean;
+            /** @description Read-only — LAPI URL + key are set in the deployment. */
+            crowdsec_configured?: boolean;
         };
         /** @description Only the fields present (non-zero) are applied. */
         SettingsUpdate: {
@@ -766,6 +787,29 @@ export interface components {
             acme_email?: string;
             access_retention_days?: number;
             waf_retention_days?: number;
+            crowdsec_enabled?: boolean;
+        };
+        CrowdSecStatus: {
+            /** @description LAPI URL + key present. */
+            configured: boolean;
+            /** @description Bouncer wired into the edge. */
+            enabled: boolean;
+            /** @description LAPI answered. */
+            reachable: boolean;
+            error?: string;
+            decisions: components["schemas"]["CrowdSecDecision"][];
+        };
+        CrowdSecDecision: {
+            id?: number;
+            origin?: string;
+            /** @description ban | captcha | throttle */
+            type?: string;
+            /** @description Ip | Range | ... */
+            scope?: string;
+            /** @description The banned IP/CIDR. */
+            value: string;
+            duration?: string;
+            scenario?: string;
         };
         Certificate: {
             /** @description Storage name (label) — coverage comes from `subjects`. */
@@ -2274,6 +2318,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Settings"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    crowdsecStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CrowdSecStatus"];
                 };
             };
             default: components["responses"]["Error"];

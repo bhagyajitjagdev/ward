@@ -15,6 +15,7 @@ import (
 
 	"github.com/bhagyajitjagdev/ward/backend/internal/caddy"
 	"github.com/bhagyajitjagdev/ward/backend/internal/certs"
+	"github.com/bhagyajitjagdev/ward/backend/internal/crowdsec"
 	"github.com/bhagyajitjagdev/ward/backend/internal/model"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 )
@@ -64,13 +65,21 @@ var Version = "dev"
 
 // Handler wires HTTP routes to the store and the Caddy applier.
 type Handler struct {
-	store   *store.Store
-	applier *caddy.Applier
+	store    *store.Store
+	applier  *caddy.Applier
+	crowdsec *crowdsec.Client // read-only LAPI client; nil when CrowdSec isn't configured
 }
 
 // New builds a Handler. applier may be nil (API-only mode, no edge).
 func New(s *store.Store, applier *caddy.Applier) *Handler {
 	return &Handler{store: s, applier: applier}
+}
+
+// WithCrowdSec attaches a read-only CrowdSec LAPI client (chainable). Pass nil to
+// leave CrowdSec unconfigured — the /crowdsec endpoint then reports it as such.
+func (h *Handler) WithCrowdSec(c *crowdsec.Client) *Handler {
+	h.crowdsec = c
+	return h
 }
 
 // Routes returns the configured router (Go 1.22+ method+path patterns).
@@ -133,6 +142,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /config-snapshots/{id}/rollback", h.rollback)
 	mux.HandleFunc("GET /settings", h.getSettings)
 	mux.HandleFunc("PATCH /settings", h.updateSettings)
+	mux.HandleFunc("GET /crowdsec", h.crowdsecStatus)
 	mux.HandleFunc("GET /certificates", h.listCertificates)
 	mux.HandleFunc("POST /certificates", h.uploadCertificate)
 	mux.HandleFunc("DELETE /certificates/{domain}", h.deleteCertificate)

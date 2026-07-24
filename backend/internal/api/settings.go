@@ -15,6 +15,8 @@ type settingsDTO struct {
 	AccessRetentionDays int    `json:"access_retention_days"` // days of raw access events to keep
 	WAFRetentionDays    int    `json:"waf_retention_days"`    // days of WAF detections to keep
 	CRSVersion          string `json:"crs_version"`           // read-only: OWASP CRS version the edge reported (from detections)
+	CrowdSecEnabled     *bool  `json:"crowdsec_enabled,omitempty"` // toggle the bouncer (pointer: distinguishes omitted from false on PATCH)
+	CrowdSecConfigured  bool   `json:"crowdsec_configured"`        // read-only: LAPI URL + key present (env)
 }
 
 // validWAFMode reports whether m is a valid engine mode. Empty is valid only for a
@@ -24,12 +26,16 @@ func validWAFMode(m string) bool {
 }
 
 func (h *Handler) currentSettings(r *http.Request) settingsDTO {
+	configured := h.crowdsec != nil
+	csEnabled := h.store.CrowdSecEnabled(r.Context(), configured)
 	return settingsDTO{
 		WAFEngineMode:       h.store.WAFEngineMode(r.Context(), "DetectionOnly"),
 		ACMEEmail:           h.store.ACMEEmail(r.Context(), ""),
 		AccessRetentionDays: h.store.AccessRetentionDays(r.Context(), 7),
 		WAFRetentionDays:    h.store.WAFRetentionDays(r.Context(), 30),
 		CRSVersion:          h.store.LatestCRSVersion(r.Context()),
+		CrowdSecEnabled:     &csEnabled,
+		CrowdSecConfigured:  configured,
 	}
 }
 
@@ -92,6 +98,22 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.audit(r, "settings.update", store.WAFRetentionKey, strconv.Itoa(in.WAFRetentionDays))
+		changed = true
+	}
+	if in.CrowdSecEnabled != nil {
+		if *in.CrowdSecEnabled && h.crowdsec == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "CrowdSec isn't configured — set WARD_CROWDSEC_API_URL and WARD_CROWDSEC_API_KEY in the deployment"})
+			return
+		}
+		val := "0"
+		if *in.CrowdSecEnabled {
+			val = "1"
+		}
+		if err := h.store.SetSetting(r.Context(), store.CrowdSecEnabledKey, val); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.audit(r, "settings.update", store.CrowdSecEnabledKey, val)
 		changed = true
 	}
 	if !changed {

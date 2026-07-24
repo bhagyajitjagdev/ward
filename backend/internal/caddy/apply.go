@@ -56,6 +56,7 @@ func (a *Applier) Apply(ctx context.Context) error {
 	opt.GeoIPDBPath = geoip.ActivePath(geoip.Dir())               // pick up a newly added/removed DB
 	opt.WAFEngineMode = a.store.WAFEngineMode(ctx, opt.WAFEngineMode) // DB setting overrides the env/compiled default
 	opt.ACMEEmail = a.store.ACMEEmail(ctx, opt.ACMEEmail)
+	opt.CrowdSecEnabled = a.store.CrowdSecEnabled(ctx, opt.CrowdSecEnabled) // DB toggle over the env default (URL+key stay env)
 	cfg, err := Generate(Input{
 		Services:     services,
 		Exclusions:   exclusions,

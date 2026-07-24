@@ -21,6 +21,7 @@ const (
 	ACMEEmailKey       = "acme.email"            // contact email for managed (Let's Encrypt) certs
 	AccessRetentionKey = "access.retention_days" // how long to keep raw access events
 	WAFRetentionKey    = "waf.retention_days"    // how long to keep WAF detections
+	CrowdSecEnabledKey = "crowdsec.enabled"      // "1"/"0" — wire the CrowdSec bouncer into the edge
 )
 
 // WAFEngineMode returns the global WAF engine-mode default, falling back to
@@ -60,6 +61,17 @@ func (s *Store) WAFRetentionDays(ctx context.Context, fallback int) int {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
 		}
+	}
+	return fallback
+}
+
+// CrowdSecEnabled reports whether the CrowdSec bouncer should be wired in, falling
+// back to `fallback` (the env-derived default — on when the LAPI URL + key are set)
+// when the setting is unset. The URL + key themselves live in env (deployment
+// secrets), not the DB.
+func (s *Store) CrowdSecEnabled(ctx context.Context, fallback bool) bool {
+	if v, err := s.GetSetting(ctx, CrowdSecEnabledKey); err == nil && v != "" {
+		return v == "1"
 	}
 	return fallback
 }

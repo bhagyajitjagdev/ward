@@ -745,6 +745,18 @@ paths:
               schema: { $ref: "#/components/schemas/Settings" }
         default: { $ref: "#/components/responses/Error" }
 
+  /crowdsec:
+    get:
+      operationId: crowdsecStatus
+      summary: CrowdSec status + active decisions (read-only; the bouncer enforces them)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CrowdSecStatus" }
+        default: { $ref: "#/components/responses/Error" }
+
   /certificates:
     get:
       operationId: listCertificates
@@ -923,6 +935,8 @@ components:
         crs_version:
           type: string
           description: Read-only — OWASP CRS version the running edge reported.
+        crowdsec_enabled: { type: boolean, description: Whether the CrowdSec bouncer is wired into the edge. }
+        crowdsec_configured: { type: boolean, description: Read-only — LAPI URL + key are set in the deployment. }
 
     SettingsUpdate:
       description: Only the fields present (non-zero) are applied.
@@ -932,6 +946,31 @@ components:
         acme_email: { type: string }
         access_retention_days: { type: integer, minimum: 1, maximum: 365 }
         waf_retention_days: { type: integer, minimum: 1, maximum: 365 }
+        crowdsec_enabled: { type: boolean }
+
+    CrowdSecStatus:
+      type: object
+      required: [configured, enabled, reachable, decisions]
+      properties:
+        configured: { type: boolean, description: LAPI URL + key present. }
+        enabled: { type: boolean, description: Bouncer wired into the edge. }
+        reachable: { type: boolean, description: LAPI answered. }
+        error: { type: string }
+        decisions:
+          type: array
+          items: { $ref: "#/components/schemas/CrowdSecDecision" }
+
+    CrowdSecDecision:
+      type: object
+      required: [value]
+      properties:
+        id: { type: integer }
+        origin: { type: string }
+        type: { type: string, description: "ban | captcha | throttle" }
+        scope: { type: string, description: "Ip | Range | ..." }
+        value: { type: string, description: The banned IP/CIDR. }
+        duration: { type: string }
+        scenario: { type: string }
 
     Certificate:
       type: object

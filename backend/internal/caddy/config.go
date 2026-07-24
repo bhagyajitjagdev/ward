@@ -24,6 +24,15 @@ type Options struct {
 	ACMEEmail        string // contact email for managed (Let's Encrypt) certs
 	GeoIPDBPath      string // path to the GeoIP .mmdb for the geo matcher (empty → geo blocking off)
 	AccessLogPath    string // where Caddy writes the JSON access log (empty → access logging off)
+	CrowdSecEnabled  bool   // wire the CrowdSec bouncer into the edge
+	CrowdSecAPIURL   string // LAPI base URL, e.g. http://crowdsec:8080/
+	CrowdSecAPIKey   string // bouncer API key registered with LAPI
+}
+
+// crowdsecOn reports whether the CrowdSec bouncer should be wired in — enabled and
+// both LAPI coordinates present (a half-configured bouncer would fail to provision).
+func crowdsecOn(opt Options) bool {
+	return opt.CrowdSecEnabled && opt.CrowdSecAPIURL != "" && opt.CrowdSecAPIKey != ""
 }
 
 // DefaultOptions returns sane defaults.
@@ -164,7 +173,11 @@ func Generate(in Input, opt Options) ([]byte, error) {
 	}
 
 	var internalSubs, managedSubs, skipSubs, customSubs []string
-	routes := make([]any, 0, len(services)*2+3)
+	routes := make([]any, 0, len(services)*2+4)
+	if crowdsecOn(opt) {
+		// First in the chain: drop IPs CrowdSec has decided to ban, before any other work.
+		routes = append(routes, map[string]any{"handle": []any{map[string]any{"handler": "crowdsec"}}})
+	}
 	for _, r := range ipRoutes(globalBlocks) {
 		routes = append(routes, r) // edge-wide IP deny + allow-only gate
 	}
@@ -279,6 +292,18 @@ func Generate(in Input, opt Options) ([]byte, error) {
 	}
 	if tlsApp != nil {
 		apps["tls"] = tlsApp
+	}
+	// CrowdSec bouncer: the global app streams decisions from LAPI; the front route
+	// (added above, before the IP deny) drops banned IPs at the edge. enable_hard_fails
+	// stays false so a LAPI outage fails open — the edge keeps serving (principle #1).
+	if crowdsecOn(opt) {
+		apps["crowdsec"] = map[string]any{
+			"api_url":           opt.CrowdSecAPIURL,
+			"api_key":           opt.CrowdSecAPIKey,
+			"ticker_interval":   "10s",
+			"enable_streaming":  true,
+			"enable_hard_fails": false,
+		}
 	}
 	cfg := map[string]any{
 		"admin": map[string]any{"listen": opt.AdminListen},

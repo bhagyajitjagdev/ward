@@ -16,6 +16,7 @@ import (
 	"github.com/bhagyajitjagdev/ward/backend/internal/access"
 	"github.com/bhagyajitjagdev/ward/backend/internal/api"
 	"github.com/bhagyajitjagdev/ward/backend/internal/caddy"
+	"github.com/bhagyajitjagdev/ward/backend/internal/crowdsec"
 	"github.com/bhagyajitjagdev/ward/backend/internal/geoip"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 	"github.com/bhagyajitjagdev/ward/backend/internal/waf"
@@ -68,6 +69,7 @@ func main() {
 		opt := caddyOptions()
 		opt.WAFEngineMode = st.WAFEngineMode(ctx, opt.WAFEngineMode)
 		opt.ACMEEmail = st.ACMEEmail(ctx, opt.ACMEEmail)
+		opt.CrowdSecEnabled = st.CrowdSecEnabled(ctx, opt.CrowdSecEnabled)
 		cfg, err := caddy.Generate(caddy.Input{
 			Services:     services,
 			Exclusions:   exclusions,
@@ -120,8 +122,14 @@ func main() {
 
 	// The API lives under /api; the embedded ward-ui (when compiled in and
 	// WARD_UI != "0") serves the SPA at everything else, on the same private port.
+	// Read-only CrowdSec LAPI client (nil unless the deployment set the URL + key).
+	var csClient *crowdsec.Client
+	if u, k := os.Getenv("WARD_CROWDSEC_API_URL"), os.Getenv("WARD_CROWDSEC_API_KEY"); u != "" && k != "" {
+		csClient = crowdsec.New(u, k)
+	}
+
 	root := http.NewServeMux()
-	root.Handle("/api/", http.StripPrefix("/api", api.New(st, applier).Routes()))
+	root.Handle("/api/", http.StripPrefix("/api", api.New(st, applier).WithCrowdSec(csClient).Routes()))
 	if os.Getenv("WARD_UI") != "0" {
 		if assets, ok := web.Assets(); ok {
 			root.Handle("/", web.SPAHandler(assets))
@@ -154,6 +162,11 @@ func caddyOptions() caddy.Options {
 		opt.ACMEEmail = v
 	}
 	opt.AccessLogPath = os.Getenv("WARD_ACCESS_LOG")
+	// CrowdSec LAPI coordinates are deployment secrets (compose env), not DB settings.
+	// Default enabled when both are present; a DB toggle can still turn it off.
+	opt.CrowdSecAPIURL = os.Getenv("WARD_CROWDSEC_API_URL")
+	opt.CrowdSecAPIKey = os.Getenv("WARD_CROWDSEC_API_KEY")
+	opt.CrowdSecEnabled = opt.CrowdSecAPIURL != "" && opt.CrowdSecAPIKey != ""
 	opt.GeoIPDBPath = geoip.ActivePath(geoip.Dir())
 	// Auto-HTTPS off by default in dev (no public domains → no ACME); opt in with =1.
 	opt.DisableAutoHTTPS = os.Getenv("WARD_CADDY_AUTO_HTTPS") != "1"
