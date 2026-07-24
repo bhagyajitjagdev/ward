@@ -827,12 +827,20 @@ export interface components {
         Scope: "global" | "service";
         /** @enum {string} */
         BlockMode: "block" | "allow";
+        /**
+         * @description How `path` is matched against the request URI. Default prefix.
+         * @enum {string}
+         */
+        PathMatch: "exact" | "prefix" | "regex";
         WafExclusion: {
             id: string;
             scope: components["schemas"]["Scope"];
             service_id?: string | null;
             rule_id: number;
             path?: string;
+            path_match?: components["schemas"]["PathMatch"];
+            /** @description Restrict to these HTTP methods; empty = any. */
+            methods?: string[];
             target?: string;
             seclang: string;
             state: string;
@@ -845,6 +853,8 @@ export interface components {
             scope: components["schemas"]["Scope"];
             service_id?: string | null;
             path?: string;
+            path_match?: components["schemas"]["PathMatch"];
+            methods?: string[];
             target?: string;
         };
         WafCustomRule: {

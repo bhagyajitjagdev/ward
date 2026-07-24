@@ -7,7 +7,10 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"regexp"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bhagyajitjagdev/ward/backend/internal/caddy"
@@ -15,6 +18,45 @@ import (
 	"github.com/bhagyajitjagdev/ward/backend/internal/model"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 )
+
+// normalizePathMatch validates a path match-type, defaulting empty to "prefix".
+func normalizePathMatch(m string) (string, string) {
+	switch m {
+	case "", "prefix":
+		return "prefix", ""
+	case "exact", "regex":
+		return m, ""
+	default:
+		return "", "path_match must be 'exact', 'prefix' or 'regex'"
+	}
+}
+
+var validHTTPMethods = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true,
+	"HEAD": true, "OPTIONS": true, "TRACE": true, "CONNECT": true,
+}
+
+// normalizeMethods upper-cases, validates, de-dupes and sorts an HTTP-method
+// filter (deterministic SecLang). Returns (methods, "") or (nil, errorMessage).
+func normalizeMethods(in []string) ([]string, string) {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range in {
+		m = strings.ToUpper(strings.TrimSpace(m))
+		if m == "" {
+			continue
+		}
+		if !validHTTPMethods[m] {
+			return nil, "unknown HTTP method: " + m
+		}
+		if !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	sort.Strings(out)
+	return out, ""
+}
 
 // Version is the Ward build version, set from main (ldflags-injected). Surfaced at
 // GET /version for the UI's sidebar version badge. "dev" for local builds.
@@ -325,13 +367,34 @@ func (h *Handler) createExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Structured match options: path match-type + optional method filter.
+	pathMatch, msg := normalizePathMatch(in.PathMatch)
+	if msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
+	in.PathMatch = pathMatch
+	methods, msg := normalizeMethods(in.Methods)
+	if msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
+	in.Methods = methods
+	// A regex path is user input — fail fast with a clear message before the edge sees it.
+	if pathMatch == "regex" && in.Path != "" {
+		if _, err := regexp.Compile(in.Path); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path regex: " + err.Error()})
+			return
+		}
+	}
+
 	// Assign a reserved SecLang rule id and generate the scoped exclusion.
 	seqID, err := h.store.NextSeq(r.Context(), "exclusion_rule_id", 90000001)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	in.SecLang = caddy.GenerateExclusionSecLang(int(seqID), in.RuleID, in.Path, in.Target)
+	in.SecLang = caddy.GenerateExclusionSecLang(int(seqID), in.RuleID, in.PathMatch, in.Path, in.Methods, in.Target)
 	in.State = "active"
 	in.Source = "manual"
 
@@ -340,7 +403,14 @@ func (h *Handler) createExclusion(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	h.reconcile(r.Context()) // recompose directives + push to Caddy
+	// Push the recomposed directives. A config rejection (e.g. a regex Coraza won't
+	// accept) rolls the row back; an edge-down keeps it — Ward-generated SecLang is
+	// trusted and reconcile will retry.
+	if rejected, emsg := h.applyEdge(r.Context()); rejected {
+		_, _ = h.store.DeleteExclusion(r.Context(), ex.ID)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the edge rejected this exclusion: " + emsg})
+		return
+	}
 	h.audit(r, "exclusion.create", "exclusion:"+ex.ID, ex.SecLang)
 	writeJSON(w, http.StatusCreated, ex)
 }

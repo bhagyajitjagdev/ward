@@ -75,6 +75,27 @@ func (h *Handler) applyOrReject(ctx context.Context) string {
 	return ""
 }
 
+// applyEdge pushes the config and distinguishes a config rejection from a
+// transport failure. rejected=true only when the edge refused the config (bad
+// SecLang — a "load rejected" from the admin API); an unreachable edge returns
+// rejected=false so the caller keeps the row and lets reconcile retry. Used by
+// callers whose stored SecLang is trusted (generated exclusions), unlike the
+// raw custom rules, which must roll back on any apply failure.
+func (h *Handler) applyEdge(ctx context.Context) (bool, string) {
+	if h.applier == nil {
+		return false, ""
+	}
+	err := h.applier.Apply(ctx)
+	if err == nil {
+		return false, ""
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "load rejected") {
+		return true, edgeErrorTail(msg)
+	}
+	return false, "" // edge unreachable — keep the row, reconcile will retry
+}
+
 // edgeErrorTail cuts Caddy's nested provision chain ("loading module 'subroute':
 // … loading module 'waf': …") down to the SecLang compile error — the part the
 // operator can actually act on. Falls back to the full message.

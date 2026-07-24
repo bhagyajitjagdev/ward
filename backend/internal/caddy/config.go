@@ -6,6 +6,7 @@ package caddy
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/bhagyajitjagdev/ward/backend/internal/certs"
@@ -452,20 +453,73 @@ func geoDenyRoute(countries []string, dbPath string) map[string]any {
 // GenerateExclusionSecLang builds the SecLang for one scoped exclusion. With a
 // path it's a runtime rule (the wedge form: silence a rule's target on a path);
 // without a path it's a configure-time rule affecting the whole handler.
-func GenerateExclusionSecLang(seclangID, ruleID int, path, target string) string {
+// pathOperator maps a path match-type to the SecLang operator applied to
+// REQUEST_URI. Unknown/empty falls back to prefix (backward-compatible).
+func pathOperator(match string) string {
+	switch match {
+	case "exact":
+		return "@streq"
+	case "regex":
+		return "@rx"
+	default:
+		return "@beginsWith"
+	}
+}
+
+// pathLineRegex renders the path portion of a REQUEST_LINE regex for a match-type
+// (the caller prepends the method alternation + separator). Literal paths are
+// regex-escaped; a user regex is embedded with its URI anchors stripped, since in
+// the request line the URI is bounded by the leading method and a trailing space.
+func pathLineRegex(match, path string) string {
+	switch match {
+	case "exact":
+		return regexp.QuoteMeta(path) + `(?:\?\S*)?\s` // path, optional query, then the space before HTTP/x
+	case "regex":
+		return strings.TrimSuffix(strings.TrimPrefix(path, "^"), "$")
+	default: // prefix
+		return regexp.QuoteMeta(path)
+	}
+}
+
+// GenerateExclusionSecLang builds the SecLang for a scoped exclusion. With no
+// conditions it emits the static directive (SecRuleRemoveById / -UpdateTargetById,
+// the cheapest form). With a path and/or method filter it emits a single phase-1
+// SecRule whose ctl neutralizes the target rule (a single target if one is named,
+// else the whole rule) only when the condition matches. phase:1 keeps the ctl
+// ahead of the CRS rules it edits.
+//
+// It is deliberately a SINGLE rule, never a chain: Coraza runs a chain starter's
+// non-disruptive ctl on the starter's own match, before the chained conditions are
+// evaluated, so a chain can't gate the ctl. A path+method filter is therefore
+// combined into one @rx against REQUEST_LINE ("METHOD URI HTTP/x").
+func GenerateExclusionSecLang(seclangID, ruleID int, pathMatch, path string, methods []string, target string) string {
+	path = strings.TrimSpace(path)
 	var ctl string
 	if target != "" {
 		ctl = fmt.Sprintf("ctl:ruleRemoveTargetById=%d;%s", ruleID, target)
 	} else {
 		ctl = fmt.Sprintf("ctl:ruleRemoveById=%d", ruleID)
 	}
-	if path != "" {
-		return fmt.Sprintf(`SecRule REQUEST_URI "@beginsWith %s" "id:%d,phase:1,pass,nolog,%s"`, path, seclangID, ctl)
+
+	// No conditions → the static directive form (unchanged behavior).
+	if path == "" && len(methods) == 0 {
+		if target != "" {
+			return fmt.Sprintf(`SecRuleUpdateTargetById %d "!%s"`, ruleID, target)
+		}
+		return fmt.Sprintf("SecRuleRemoveById %d", ruleID)
 	}
-	if target != "" {
-		return fmt.Sprintf(`SecRuleUpdateTargetById %d "!%s"`, ruleID, target)
+
+	var variable, operator, value string
+	switch {
+	case len(methods) > 0 && path != "":
+		variable, operator = "REQUEST_LINE", "@rx"
+		value = fmt.Sprintf(`^(%s)\s+%s`, strings.Join(methods, "|"), pathLineRegex(pathMatch, path))
+	case len(methods) > 0:
+		variable, operator, value = "REQUEST_METHOD", "@rx", "^("+strings.Join(methods, "|")+")$"
+	default: // path only
+		variable, operator, value = "REQUEST_URI", pathOperator(pathMatch), path
 	}
-	return fmt.Sprintf("SecRuleRemoveById %d", ruleID)
+	return fmt.Sprintf(`SecRule %s "%s %s" "id:%d,phase:1,pass,nolog,%s"`, variable, operator, value, seclangID, ctl)
 }
 
 // serviceRoute builds one host-matched route: [ip rules] → [geo rules] → [rate_limit?] → [waf?] → reverse_proxy.

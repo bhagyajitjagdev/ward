@@ -10,8 +10,10 @@ type WAFExclusion struct {
 	Scope     string    `json:"scope"` // "global" | "service"
 	ServiceID *string   `json:"service_id,omitempty"`
 	RuleID    int       `json:"rule_id"`
-	Path      string    `json:"path,omitempty"`   // path prefix; empty = whole handler
-	Target    string    `json:"target,omitempty"` // e.g. "ARGS:id"; empty = whole rule
+	Path      string    `json:"path,omitempty"`       // the path/pattern; empty = whole handler
+	PathMatch string    `json:"path_match,omitempty"` // "exact" | "prefix" (default) | "regex"
+	Methods   []string  `json:"methods,omitempty"`    // restrict to these HTTP methods; empty = any
+	Target    string    `json:"target,omitempty"`     // e.g. "ARGS:id"; empty = whole rule
 	SecLang   string    `json:"seclang"`
 	State     string    `json:"state"`  // "active" (soak flow deferred)
 	Source    string    `json:"source"` // "manual"

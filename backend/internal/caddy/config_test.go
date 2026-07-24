@@ -126,18 +126,44 @@ func TestGenerateWithCustomRules(t *testing.T) {
 }
 
 func TestGenerateExclusionSecLang(t *testing.T) {
-	// path + target → runtime rule with reserved id
-	got := GenerateExclusionSecLang(90000001, 942100, "/leads/batch", "ARGS:id")
+	// prefix path + target → runtime rule with reserved id (backward-compatible form)
+	got := GenerateExclusionSecLang(90000001, 942100, "prefix", "/leads/batch", nil, "ARGS:id")
 	want := `SecRule REQUEST_URI "@beginsWith /leads/batch" "id:90000001,phase:1,pass,nolog,ctl:ruleRemoveTargetById=942100;ARGS:id"`
 	if got != want {
-		t.Errorf("path+target:\n got %q\nwant %q", got, want)
+		t.Errorf("prefix path+target:\n got %q\nwant %q", got, want)
+	}
+	// empty match-type defaults to prefix (existing rows / contextual quick-creates)
+	if got := GenerateExclusionSecLang(90000001, 942100, "", "/x", nil, ""); got != `SecRule REQUEST_URI "@beginsWith /x" "id:90000001,phase:1,pass,nolog,ctl:ruleRemoveById=942100"` {
+		t.Errorf("default match-type: got %q", got)
+	}
+	// exact + regex operators
+	if got := GenerateExclusionSecLang(1, 942100, "exact", "/a", nil, ""); !strings.Contains(got, `"@streq /a"`) {
+		t.Errorf("exact op: got %q", got)
+	}
+	if got := GenerateExclusionSecLang(1, 942100, "regex", "^/api/.*$", nil, ""); !strings.Contains(got, `"@rx ^/api/.*$"`) {
+		t.Errorf("regex op: got %q", got)
+	}
+	// method-only → single SecRule on REQUEST_METHOD
+	if got := GenerateExclusionSecLang(1, 942100, "prefix", "", []string{"POST", "PUT"}, ""); got != `SecRule REQUEST_METHOD "@rx ^(POST|PUT)$" "id:1,phase:1,pass,nolog,ctl:ruleRemoveById=942100"` {
+		t.Errorf("method-only: got %q", got)
+	}
+	// path + methods → a SINGLE rule against REQUEST_LINE (not a chain — Coraza can't
+	// gate a chain starter's ctl). prefix path is regex-escaped.
+	got = GenerateExclusionSecLang(90000002, 942100, "prefix", "/api/leads", []string{"POST"}, "ARGS:id")
+	wantLine := `SecRule REQUEST_LINE "@rx ^(POST)\s+/api/leads" "id:90000002,phase:1,pass,nolog,ctl:ruleRemoveTargetById=942100;ARGS:id"`
+	if got != wantLine {
+		t.Errorf("path+method:\n got %q\nwant %q", got, wantLine)
+	}
+	// regex path + methods → REQUEST_LINE with the URI-anchors stripped from the pattern
+	if got := GenerateExclusionSecLang(3, 942100, "regex", "^/api/v[0-9]+/x$", []string{"GET"}, ""); got != `SecRule REQUEST_LINE "@rx ^(GET)\s+/api/v[0-9]+/x" "id:3,phase:1,pass,nolog,ctl:ruleRemoveById=942100"` {
+		t.Errorf("regex+method: got %q", got)
 	}
 	// no path, with target → configure-time target removal
-	if got := GenerateExclusionSecLang(0, 942100, "", "ARGS:id"); got != `SecRuleUpdateTargetById 942100 "!ARGS:id"` {
+	if got := GenerateExclusionSecLang(0, 942100, "", "", nil, "ARGS:id"); got != `SecRuleUpdateTargetById 942100 "!ARGS:id"` {
 		t.Errorf("no-path target: got %q", got)
 	}
-	// no path, no target → whole-rule removal
-	if got := GenerateExclusionSecLang(0, 942100, "", ""); got != "SecRuleRemoveById 942100" {
+	// no path, no target, no methods → whole-rule removal
+	if got := GenerateExclusionSecLang(0, 942100, "", "", nil, ""); got != "SecRuleRemoveById 942100" {
 		t.Errorf("whole rule: got %q", got)
 	}
 }

@@ -35,6 +35,7 @@ export const Route = createFileRoute("/_app/exclusions")({
 function ExclusionsPage() {
   const qc = useQueryClient()
   const names = useServiceNames()
+  const [newOpen, setNewOpen] = useState(false)
   const { data: exclusions, isLoading, error } = useQuery({
     queryKey: ["exclusions"],
     queryFn: api.listExclusions,
@@ -53,15 +54,21 @@ function ExclusionsPage() {
       <PageHeader
         eyebrow="Edge"
         title="Exclusions"
-        description="Scoped rules that tell the WAF to stand down on one path or field — without weakening it anywhere else. Create these from Top Triggers or a WAF event."
+        description="Scoped rules that tell the WAF to stand down on one path or field — without weakening it anywhere else. Create them from Top Triggers or a WAF event, or build one by hand."
         actions={
-          exclusions ? (
-            <Mono dim className="!text-xs uppercase tracking-wider">
-              {exclusions.length} active
-            </Mono>
-          ) : undefined
+          <div className="flex items-center gap-3">
+            {exclusions ? (
+              <Mono dim className="!text-xs uppercase tracking-wider">
+                {exclusions.length} active
+              </Mono>
+            ) : null}
+            <Button size="sm" onClick={() => setNewOpen(true)}>
+              <Plus className="size-4" /> New exclusion
+            </Button>
+          </div>
         }
       />
+      <ExclusionDialog open={newOpen} onOpenChange={setNewOpen} />
 
       <div className="overflow-hidden rounded-xl border">
         <table className="w-full text-sm">
@@ -110,7 +117,30 @@ function ExclusionsPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <Mono>{x.path || "—"}</Mono>
+                  {x.path ? (
+                    <div className="flex items-center gap-1.5">
+                      {x.path_match && x.path_match !== "prefix" && (
+                        <span className="rounded border bg-muted/40 px-1 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                          {x.path_match}
+                        </span>
+                      )}
+                      <Mono>{x.path}</Mono>
+                    </div>
+                  ) : (
+                    <Mono dim>—</Mono>
+                  )}
+                  {x.methods && x.methods.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {x.methods.map((m) => (
+                        <span
+                          key={m}
+                          className="rounded bg-primary/10 px-1 py-0.5 font-mono text-[10px] font-medium text-primary"
+                        >
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <Mono dim className="!text-xs">
@@ -148,6 +178,183 @@ function ExclusionsPage() {
 
       <CustomRulesSection />
     </div>
+  )
+}
+
+const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const
+
+// ExclusionDialog is the structured builder: pick the rule, scope, how the path is
+// matched (prefix / exact / regex), an optional method filter and target. Ward
+// generates the SecLang server-side and validates it against the edge.
+function ExclusionDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const qc = useQueryClient()
+  const { data: services } = useServices()
+  const [ruleId, setRuleId] = useState("")
+  const [scope, setScope] = useState("global") // "global" | <service id>
+  const [pathMatch, setPathMatch] = useState<"prefix" | "exact" | "regex">("prefix")
+  const [path, setPath] = useState("")
+  const [methods, setMethods] = useState<string[]>([])
+  const [target, setTarget] = useState("")
+
+  useEffect(() => {
+    if (!open) return
+    setRuleId("")
+    setScope("global")
+    setPathMatch("prefix")
+    setPath("")
+    setMethods([])
+    setTarget("")
+  }, [open])
+
+  const toggleMethod = (m: string) =>
+    setMethods((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.createExclusion({
+        rule_id: Number(ruleId),
+        scope: (scope === "global" ? "global" : "service") as "global" | "service",
+        service_id: scope === "global" ? undefined : scope,
+        path: path.trim() || undefined,
+        path_match: pathMatch,
+        methods: methods.length ? methods : undefined,
+        target: target.trim() || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exclusions"] })
+      toast.success("Exclusion applied — the WAF stands down where you scoped it")
+      onOpenChange(false)
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't create the exclusion"),
+  })
+
+  const ready = Number(ruleId) > 0
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>New exclusion</DialogTitle>
+          <DialogDescription>
+            Tell the WAF to stand down for a specific rule, scoped by path and method. Leave path and methods
+            empty to silence the rule everywhere in this scope. Ward generates and validates the SecLang.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (ready) save.mutate()
+          }}
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="excl-rule">Rule ID</Label>
+              <Input
+                id="excl-rule"
+                className="font-mono"
+                inputMode="numeric"
+                value={ruleId}
+                onChange={(e) => setRuleId(e.target.value.replace(/[^0-9]/g, ""))}
+                placeholder="942100"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="excl-scope">Scope</Label>
+              <Select value={scope} onValueChange={setScope}>
+                <SelectTrigger id="excl-scope" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">Global · every service</SelectItem>
+                  {services?.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Path</Label>
+            <div className="flex gap-2">
+              <Select value={pathMatch} onValueChange={(v) => setPathMatch(v as typeof pathMatch)}>
+                <SelectTrigger className="w-32 shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prefix">prefix</SelectItem>
+                  <SelectItem value="exact">exact</SelectItem>
+                  <SelectItem value="regex">regex</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                className="font-mono"
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder={pathMatch === "regex" ? "^/api/v[0-9]+/leads" : "/api/leads"}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {pathMatch === "prefix" && "Matches any URI that starts with this."}
+              {pathMatch === "exact" && "Matches this exact request URI."}
+              {pathMatch === "regex" && "RE2 regex matched against the request URI."}
+              {" "}Empty = the whole scope.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Methods <span className="text-muted-foreground">(optional — any if none selected)</span></Label>
+            <div className="flex flex-wrap gap-1.5">
+              {HTTP_METHODS.map((m) => {
+                const on = methods.includes(m)
+                return (
+                  <button
+                    type="button"
+                    key={m}
+                    onClick={() => toggleMethod(m)}
+                    className={
+                      "rounded-md border px-2 py-1 font-mono text-xs transition-colors " +
+                      (on
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted/50")
+                    }
+                  >
+                    {m}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="excl-target">Field <span className="text-muted-foreground">(optional)</span></Label>
+            <Input
+              id="excl-target"
+              className="font-mono"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="ARGS:id"
+            />
+            <p className="text-xs text-muted-foreground">
+              Drop just one field from the rule (e.g. <Mono className="!text-[11px]">ARGS:id</Mono>) instead of
+              the whole rule.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!ready || save.isPending}>
+              {save.isPending ? "Validating on the edge…" : "Create exclusion"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

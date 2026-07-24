@@ -1007,6 +1007,11 @@ components:
       type: string
       enum: [block, allow]
 
+    PathMatch:
+      type: string
+      enum: [exact, prefix, regex]
+      description: How `path` is matched against the request URI. Default prefix.
+
     WafExclusion:
       type: object
       required: [id, scope, rule_id, seclang, state, source, created_at]
@@ -1016,6 +1021,11 @@ components:
         service_id: { type: string, nullable: true }
         rule_id: { type: integer }
         path: { type: string }
+        path_match: { $ref: "#/components/schemas/PathMatch" }
+        methods:
+          type: array
+          items: { type: string }
+          description: Restrict to these HTTP methods; empty = any.
         target: { type: string }
         seclang: { type: string }
         state: { type: string }
@@ -1030,6 +1040,10 @@ components:
         scope: { $ref: "#/components/schemas/Scope" }
         service_id: { type: string, nullable: true }
         path: { type: string }
+        path_match: { $ref: "#/components/schemas/PathMatch" }
+        methods:
+          type: array
+          items: { type: string }
         target: { type: string }
 
     WafCustomRule:

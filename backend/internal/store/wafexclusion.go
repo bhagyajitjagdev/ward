@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +19,8 @@ type wafExclusionRow struct {
 	ServiceID *string   `bun:"service_id"`
 	RuleID    int       `bun:"rule_id"`
 	Path      string    `bun:"path"`
+	PathMatch string    `bun:"path_match,notnull"`
+	Methods   string    `bun:"methods,notnull"` // comma-joined uppercase list ('' = any)
 	Target    string    `bun:"target"`
 	SecLang   string    `bun:"seclang,notnull"`
 	State     string    `bun:"state,notnull"`
@@ -25,10 +28,18 @@ type wafExclusionRow struct {
 	CreatedAt time.Time `bun:"created_at,notnull"`
 }
 
+func splitMethods(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
+
 func (r wafExclusionRow) toModel() model.WAFExclusion {
 	return model.WAFExclusion{
 		ID: r.ID, Scope: r.Scope, ServiceID: r.ServiceID, RuleID: r.RuleID,
-		Path: r.Path, Target: r.Target, SecLang: r.SecLang, State: r.State,
+		Path: r.Path, PathMatch: r.PathMatch, Methods: splitMethods(r.Methods),
+		Target: r.Target, SecLang: r.SecLang, State: r.State,
 		Source: r.Source, CreatedAt: r.CreatedAt,
 	}
 }
@@ -42,7 +53,8 @@ func (s *Store) CreateExclusion(ctx context.Context, in model.WAFExclusion) (mod
 	}
 	row := wafExclusionRow{
 		ID: id.String(), Scope: orDefault(in.Scope, "service"), ServiceID: in.ServiceID,
-		RuleID: in.RuleID, Path: in.Path, Target: in.Target, SecLang: in.SecLang,
+		RuleID: in.RuleID, Path: in.Path, PathMatch: orDefault(in.PathMatch, "prefix"),
+		Methods: strings.Join(in.Methods, ","), Target: in.Target, SecLang: in.SecLang,
 		State: orDefault(in.State, "active"), Source: orDefault(in.Source, "manual"),
 		CreatedAt: time.Now().UTC(),
 	}
