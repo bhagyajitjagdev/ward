@@ -7,13 +7,16 @@ import { cn } from "@/lib/utils"
 import { PageHeader, StatusDot, Mono } from "@/components/console"
 import { useServices } from "@/data/queries"
 import { api, ApiError } from "@/lib/api"
-import type { Service, WafMode, HTTPConfig } from "@/lib/api"
-import { ServiceHttpOptions } from "@/components/service-http-options"
+import type { Service, WafMode } from "@/lib/api"
+import {
+  ServiceFormFields,
+  emptyServiceForm,
+  formToInput,
+  serviceFormValid,
+  type ServiceFormState,
+} from "@/components/service-form"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
-import { TokenInput } from "@/components/ui/token-input"
 import {
   Dialog,
   DialogContent,
@@ -23,7 +26,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export const Route = createFileRoute("/_app/services/")({
   component: ServicesPage,
@@ -191,43 +193,18 @@ function TlsBadge({ mode }: { mode: Service["tls_mode"] }) {
 function CreateServiceDialog() {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [name, setName] = useState("")
-  const [hostnames, setHostnames] = useState<string[]>([])
-  const [upstreams, setUpstreams] = useState<string[]>([])
-  const [tlsMode, setTlsMode] = useState("managed")
-  const [lbPolicy, setLbPolicy] = useState("round_robin")
-  const [wafEnabled, setWafEnabled] = useState(true)
-  const [http, setHttp] = useState<HTTPConfig>({})
-  const [rawCaddy, setRawCaddy] = useState("")
+  const [form, setForm] = useState<ServiceFormState>(emptyServiceForm())
 
   const create = useMutation({
-    mutationFn: () =>
-      api.createService({
-        name: name.trim(),
-        public_hostnames: hostnames,
-        upstreams,
-        tls_mode: tlsMode,
-        lb_policy: lbPolicy,
-        waf_enabled: wafEnabled,
-        http,
-        raw_caddy: rawCaddy.trim() || undefined,
-      }),
+    mutationFn: () => api.createService(formToInput(form)),
     onSuccess: (svc) => {
       qc.invalidateQueries({ queryKey: ["services"] })
       qc.invalidateQueries({ queryKey: ["overview"] })
       toast.success(`Service “${svc.name}” created`, { description: "Route generated and applied to the edge." })
       setOpen(false)
-      setName("")
-      setHostnames([])
-      setUpstreams([])
-      setTlsMode("managed")
-      setLbPolicy("round_robin")
-      setWafEnabled(true)
-      setHttp({})
-      setRawCaddy("")
+      setForm(emptyServiceForm())
     },
-    onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : "Couldn't create the service"),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't create the service"),
   })
 
   return (
@@ -237,7 +214,7 @@ function CreateServiceDialog() {
           <Plus className="size-4" /> Add service
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[88vh] overflow-y-auto">
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add service</DialogTitle>
           <DialogDescription>
@@ -247,89 +224,16 @@ function CreateServiceDialog() {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            create.mutate()
+            if (serviceFormValid(form)) create.mutate()
           }}
-          className="space-y-4"
+          className="space-y-6"
         >
-          <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="app-api" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="hostnames">
-              Public hostnames <span className="font-normal text-muted-foreground">— Enter to add each</span>
-            </Label>
-            <TokenInput
-              id="hostnames"
-              ariaLabel="Public hostnames"
-              value={hostnames}
-              onChange={setHostnames}
-              placeholder="api.acme.com"
-            />
-            <p className="text-xs text-muted-foreground">All names route to this one service — one WAF policy, one set of rules.</p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="upstreams">
-              Upstreams <span className="font-normal text-muted-foreground">— host:port, Enter to add each</span>
-            </Label>
-            <TokenInput
-              id="upstreams"
-              ariaLabel="Upstreams"
-              value={upstreams}
-              onChange={setUpstreams}
-              placeholder="api-1.mesh:8000"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="tls">TLS</Label>
-              <Select value={tlsMode} onValueChange={setTlsMode}>
-                <SelectTrigger id="tls" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="managed">Managed · Let's Encrypt</SelectItem>
-                  <SelectItem value="internal">Internal CA · self-signed</SelectItem>
-                  <SelectItem value="custom">Custom certificate · upload</SelectItem>
-                  <SelectItem value="none">None · HTTP only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lb">Load balancing</Label>
-              <Select value={lbPolicy} onValueChange={setLbPolicy}>
-                <SelectTrigger id="lb" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="round_robin">Round robin</SelectItem>
-                  <SelectItem value="least_conn">Least connections</SelectItem>
-                  <SelectItem value="random">Random</SelectItem>
-                  <SelectItem value="ip_hash">IP hash · sticky</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <label className="flex items-center gap-2.5 rounded-lg border bg-muted/30 p-3 text-sm">
-            <input
-              type="checkbox"
-              checked={wafEnabled}
-              onChange={(e) => setWafEnabled(e.target.checked)}
-              className="size-4 accent-primary"
-            />
-            <span>
-              <span className="font-medium">Protect with the WAF</span>
-              <span className="block text-xs text-muted-foreground">
-                Coraza + OWASP CRS, following the global engine default. Override it per service once it's tuned.
-              </span>
-            </span>
-          </label>
-          <ServiceHttpOptions value={http} onChange={setHttp} rawCaddy={rawCaddy} onRawChange={setRawCaddy} />
+          <ServiceFormFields form={form} onChange={setForm} mode="create" />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={create.isPending}>
+            <Button type="submit" disabled={!serviceFormValid(form) || create.isPending}>
               {create.isPending ? "Creating…" : "Create service"}
             </Button>
           </DialogFooter>

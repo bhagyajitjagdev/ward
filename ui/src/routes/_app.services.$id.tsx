@@ -7,12 +7,15 @@ import { cn } from "@/lib/utils"
 import { certForHost } from "@/lib/certs"
 import { PageHeader, StatusDot, SeverityBadge, Mono, ago, normalizeSeverity } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
-import type { Service, WafMode, HTTPConfig } from "@/lib/api"
-import { ServiceHttpOptions } from "@/components/service-http-options"
+import type { Service, WafMode } from "@/lib/api"
+import {
+  ServiceFormFields,
+  serviceToForm,
+  formToInput,
+  serviceFormValid,
+  type ServiceFormState,
+} from "@/components/service-form"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { TokenInput } from "@/components/ui/token-input"
-import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Dialog,
@@ -23,7 +26,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export const Route = createFileRoute("/_app/services/$id")({
   component: ServiceDetailPage,
@@ -258,31 +260,17 @@ function CountRow({ label, value, to }: { label: string; value: number; to: "/ex
 function EditDialog({ service }: { service: Service }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [name, setName] = useState(service.name)
-  const [hostnames, setHostnames] = useState<string[]>(service.public_hostnames)
-  const [upstreams, setUpstreams] = useState<string[]>(service.upstreams)
-  const [tlsMode, setTlsMode] = useState(service.tls_mode)
-  const [lbPolicy, setLbPolicy] = useState(service.lb_policy)
-  const [wafEnabled, setWafEnabled] = useState(service.waf_enabled)
-  const [wafMode, setWafMode] = useState<"" | WafMode>(service.waf_mode)
-  const [enabled, setEnabled] = useState(service.enabled)
-  const [http, setHttp] = useState<HTTPConfig>(service.http ?? {})
-  const [rawCaddy, setRawCaddy] = useState(service.raw_caddy ?? "")
+  const [form, setForm] = useState<ServiceFormState>(() => serviceToForm(service))
+
+  // Reset the form to the service's current values whenever the dialog opens, so a
+  // cancelled edit doesn't leave stale local state behind on the next open.
+  function onOpenChange(next: boolean) {
+    if (next) setForm(serviceToForm(service))
+    setOpen(next)
+  }
 
   const save = useMutation({
-    mutationFn: () =>
-      api.updateService(service.id, {
-        name: name.trim(),
-        public_hostnames: hostnames,
-        upstreams,
-        tls_mode: tlsMode,
-        lb_policy: lbPolicy,
-        waf_enabled: wafEnabled,
-        waf_mode: wafEnabled ? wafMode : "",
-        http,
-        raw_caddy: rawCaddy.trim() || undefined,
-        enabled,
-      }),
+    mutationFn: () => api.updateService(service.id, formToInput(form)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["service", service.id] })
       qc.invalidateQueries({ queryKey: ["services"] })
@@ -294,13 +282,13 @@ function EditDialog({ service }: { service: Service }) {
   })
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline">
           <Pencil className="size-4" /> Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[88vh] overflow-y-auto">
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Edit service</DialogTitle>
           <DialogDescription>Changes regenerate the Caddy route and apply to the edge, with a rollback snapshot.</DialogDescription>
@@ -308,91 +296,16 @@ function EditDialog({ service }: { service: Service }) {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            save.mutate()
+            if (serviceFormValid(form)) save.mutate()
           }}
-          className="space-y-4"
+          className="space-y-6"
         >
-          <div className="space-y-2">
-            <Label htmlFor="e-name">Name</Label>
-            <Input id="e-name" value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="e-hostnames">
-              Public hostnames <span className="font-normal text-muted-foreground">— Enter to add each</span>
-            </Label>
-            <TokenInput id="e-hostnames" ariaLabel="Public hostnames" value={hostnames} onChange={setHostnames} placeholder="api.acme.com" />
-            <p className="text-xs text-muted-foreground">All names route to this service — one WAF policy, one set of rules.</p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="e-upstreams">Upstreams</Label>
-            <TokenInput id="e-upstreams" ariaLabel="Upstreams" value={upstreams} onChange={setUpstreams} placeholder="api-1.mesh:8000" />
-            <p className="text-xs text-muted-foreground">
-              host:port, Enter to add each. Multiple upstreams are <strong>load-balanced replicas of the same app</strong> — not different apps.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="e-tls">TLS</Label>
-              <Select value={tlsMode} onValueChange={setTlsMode}>
-                <SelectTrigger id="e-tls" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="managed">Managed · Let's Encrypt</SelectItem>
-                  <SelectItem value="internal">Internal CA · self-signed</SelectItem>
-                  <SelectItem value="custom">Custom certificate · upload</SelectItem>
-                  <SelectItem value="none">None · HTTP only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="e-lb">Load balancing</Label>
-              <Select value={lbPolicy} onValueChange={setLbPolicy}>
-                <SelectTrigger id="e-lb" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="round_robin">Round robin</SelectItem>
-                  <SelectItem value="least_conn">Least connections</SelectItem>
-                  <SelectItem value="random">Random</SelectItem>
-                  <SelectItem value="ip_hash">IP hash · sticky</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="flex items-center gap-2.5 text-sm">
-              <input type="checkbox" checked={wafEnabled} onChange={(e) => setWafEnabled(e.target.checked)} className="size-4 accent-primary" />
-              Protect with the WAF
-            </label>
-            {wafEnabled && (
-              <div className="ml-6 space-y-1.5">
-                <Label htmlFor="e-wafmode" className="text-xs text-muted-foreground">
-                  Enforcement
-                </Label>
-                <Select value={wafMode || "inherit"} onValueChange={(v) => setWafMode(v === "inherit" ? "" : (v as WafMode))}>
-                  <SelectTrigger id="e-wafmode" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="inherit">Inherit global default</SelectItem>
-                    <SelectItem value="DetectionOnly">Detection only</SelectItem>
-                    <SelectItem value="On">Enforcing · 403 on attack</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <label className="flex items-center gap-2.5 text-sm">
-              <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="size-4 accent-primary" />
-              Enabled (serving traffic)
-            </label>
-          </div>
-          <ServiceHttpOptions value={http} onChange={setHttp} rawCaddy={rawCaddy} onRawChange={setRawCaddy} editing />
+          <ServiceFormFields form={form} onChange={setForm} mode="edit" />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={save.isPending}>
+            <Button type="submit" disabled={!serviceFormValid(form) || save.isPending}>
               {save.isPending ? "Saving…" : "Save changes"}
             </Button>
           </DialogFooter>
