@@ -19,11 +19,25 @@ function OverviewPage() {
   const { data: triggers } = useQuery({ queryKey: ["top-triggers", 5], queryFn: () => api.topTriggers({ limit: 5 }), refetchInterval: 5000 })
   const { data: events } = useQuery({ queryKey: ["waf-events", 6], queryFn: () => api.listWafEvents({ limit: 6 }), refetchInterval: 5000 })
 
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const globalEnforcing = settings?.waf_engine_mode === "On"
+
   const detByService = useMemo(() => {
     const m: Record<string, number> = {}
     for (const b of overview?.by_service ?? []) m[b.service_id] = b.detections_24h
     return m
   }, [overview])
+
+  // Breakdown of WAF-armed services by their configured mode (the 3 states of the
+  // per-service override): enforcing / detection / inheriting the global default.
+  const wafModes = useMemo(() => {
+    const armed = (services ?? []).filter((s) => s.waf_enabled)
+    return {
+      enforcing: armed.filter((s) => s.waf_mode === "On").length,
+      detection: armed.filter((s) => s.waf_mode === "DetectionOnly").length,
+      inherit: armed.filter((s) => !s.waf_mode).length,
+    }
+  }, [services])
 
   const enabled = (services ?? []).filter((s) => s.enabled)
 
@@ -35,12 +49,12 @@ function OverviewPage() {
         description="What's reaching the edge right now, and how it's holding."
         actions={
           <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 font-mono text-xs">
-            <StatusDot tone="detecting" /> Engine · DetectionOnly
+            <StatusDot tone={globalEnforcing ? "threat" : "detecting"} /> Engine · {globalEnforcing ? "Enforcing" : "DetectionOnly"}
           </div>
         }
       />
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border lg:grid-cols-6">
         <Metric label="Requests · 24h" value={overview ? fmt.format(overview.requests_24h) : "—"} sub="through the edge" tone="armed" />
         <Metric label="Detections · 24h" value={overview ? fmt.format(overview.detections_24h) : "—"} sub="rule matches" tone="detecting" />
         <Metric label="Blocked · 24h" value={overview ? fmt.format(overview.blocked_24h) : "—"} sub="interrupted by the WAF" tone="threat" />
@@ -50,6 +64,7 @@ function OverviewPage() {
           value={overview ? `${overview.waf_services}/${overview.services}` : "—"}
           sub="WAF armed / total"
         />
+        <ModeBreakdown {...wafModes} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -156,6 +171,29 @@ function Metric({ label, value, sub, tone }: { label: string; value: string; sub
           {sub}
         </div>
       )}
+    </div>
+  )
+}
+
+// ModeBreakdown sits beside "Protected services" and splits the armed services by
+// their configured WAF mode, so the enforce/detect/inherit mix is visible at a glance.
+function ModeBreakdown({ enforcing, detection, inherit }: { enforcing: number; detection: number; inherit: number }) {
+  const rows = [
+    { n: enforcing, label: "enforcing", cls: "text-red-500" },
+    { n: detection, label: "detection", cls: "text-amber-500" },
+    { n: inherit, label: "inherit", cls: "text-muted-foreground" },
+  ]
+  return (
+    <div className="bg-card p-5">
+      <div className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">WAF modes</div>
+      <div className="mt-2.5 space-y-1">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-baseline gap-2">
+            <span className={cn("w-4 font-heading text-lg font-semibold tabular-nums leading-none", r.cls)}>{r.n}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{r.label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

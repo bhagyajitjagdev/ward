@@ -1,13 +1,13 @@
 import { useState } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Plus, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PageHeader, StatusDot, Mono } from "@/components/console"
 import { useServices } from "@/data/queries"
 import { api, ApiError } from "@/lib/api"
-import type { Service } from "@/lib/api"
+import type { Service, WafMode } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -29,6 +29,8 @@ export const Route = createFileRoute("/_app/services/")({
 
 function ServicesPage() {
   const { data: services, isLoading, error } = useServices()
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const globalMode: WafMode = settings?.waf_engine_mode ?? "DetectionOnly"
   const navigate = useNavigate()
 
   return (
@@ -47,6 +49,7 @@ function ServicesPage() {
               <th className="px-4 py-2.5 font-medium">Service</th>
               <th className="px-4 py-2.5 font-medium">Public hostname</th>
               <th className="px-4 py-2.5 font-medium">WAF</th>
+              <th className="px-4 py-2.5 font-medium">Mode</th>
               <th className="px-4 py-2.5 font-medium">TLS</th>
               <th className="px-4 py-2.5 font-medium">Status</th>
               <th className="w-8" />
@@ -56,21 +59,21 @@ function ServicesPage() {
             {isLoading &&
               [0, 1, 2].map((i) => (
                 <tr key={i}>
-                  <td colSpan={6} className="px-4 py-3.5">
+                  <td colSpan={7} className="px-4 py-3.5">
                     <Skeleton className="h-6 w-full" />
                   </td>
                 </tr>
               ))}
             {error && (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-sm text-red-500">
+                <td colSpan={7} className="py-12 text-center text-sm text-red-500">
                   Couldn't load services. Is the backend running?
                 </td>
               </tr>
             )}
             {services?.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-16 text-center text-sm text-muted-foreground">
+                <td colSpan={7} className="py-16 text-center text-sm text-muted-foreground">
                   No services yet — add your first one to put it behind the edge.
                 </td>
               </tr>
@@ -97,6 +100,9 @@ function ServicesPage() {
                 </td>
                 <td className="px-4 py-3">
                   <WafBadge on={s.waf_enabled} />
+                </td>
+                <td className="px-4 py-3">
+                  <WafModeBadge svc={s} globalMode={globalMode} />
                 </td>
                 <td className="px-4 py-3">
                   <TlsBadge mode={s.tls_mode} />
@@ -127,6 +133,36 @@ function WafBadge({ on }: { on: boolean }) {
       )}
     >
       <StatusDot tone={on ? "armed" : "idle"} /> {on ? "armed" : "off"}
+    </span>
+  )
+}
+
+// WafModeBadge shows the *effective* engine mode a service enforces — detection vs
+// enforcing — resolving an inherited service against the global default, with an
+// "inherit" tag so an override is distinguishable from following the default. A
+// dash when the WAF is off (mode doesn't apply). Mirrors the service detail page.
+function WafModeBadge({ svc, globalMode }: { svc: Service; globalMode: WafMode }) {
+  if (!svc.waf_enabled) {
+    return <span className="font-mono text-[11px] text-muted-foreground/50">—</span>
+  }
+  const effective: WafMode = svc.waf_mode || globalMode || "DetectionOnly"
+  const enforcing = effective === "On"
+  const inherited = !svc.waf_mode
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[11px]",
+          enforcing
+            ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400"
+            : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+        )}
+      >
+        <StatusDot tone={enforcing ? "threat" : "detecting"} /> {enforcing ? "enforcing" : "detection"}
+      </span>
+      {inherited && (
+        <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground/60">inherit</span>
+      )}
     </span>
   )
 }
