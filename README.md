@@ -26,6 +26,9 @@ then turn on enforcement — globally or one service at a time.
   **per service** once it's tuned.
 - **Tuning assistant (the wedge)** — searchable detections + top triggers → one-click scoped
   exclusion, applied live.
+- **Streaming-friendly** — WebSocket upgrades bypass the WAF automatically; for SSE/streaming
+  endpoints, list the paths to skip per service (a WAF buffers responses, which otherwise breaks
+  streaming). Other protections still apply to those paths.
 - **IP rules** — **block or allow-only**, global or per service.
 - **Rate limiting** — per-IP, global or per service.
 - **Geo blocking** — by country, block or allow-only; bring GeoIP however you like (DB-IP Lite,

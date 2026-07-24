@@ -754,6 +754,8 @@ export interface components {
             tls_mode: string;
             waf_enabled: boolean;
             waf_mode: components["schemas"]["ServiceWafMode"];
+            /** @description Request paths (matched as prefix + subpaths) for which the WAF is bypassed so streaming (SSE) works. WebSocket upgrades bypass automatically regardless. Other protections still apply. */
+            waf_skip_paths?: string[];
             http?: components["schemas"]["HTTPConfig"];
             /** @description Advanced: a raw Caddyfile fragment spliced into the route. */
             raw_caddy?: string;
@@ -794,6 +796,8 @@ export interface components {
             tls_mode?: string;
             waf_enabled?: boolean;
             waf_mode?: components["schemas"]["ServiceWafMode"];
+            /** @description Request paths (prefix + subpaths) that bypass the WAF so streaming (SSE) works; WebSocket upgrades bypass automatically. */
+            waf_skip_paths?: string[];
             http?: components["schemas"]["HTTPConfig"];
             raw_caddy?: string;
         };

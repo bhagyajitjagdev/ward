@@ -17,8 +17,12 @@ type Service struct {
 	LBPolicy        string     `json:"lb_policy"`
 	TLSMode         string     `json:"tls_mode"`
 	WAFEnabled      bool       `json:"waf_enabled"`
-	WAFMode         string     `json:"waf_mode"`            // "" = inherit global default | "DetectionOnly" | "On"
-	HTTP            HTTPConfig `json:"http"`                // structured proxy controls (headers, auth, rewrite…)
+	WAFMode         string     `json:"waf_mode"` // "" = inherit global default | "DetectionOnly" | "On"
+	// WAFSkipPaths are request paths (matched as prefix + subpaths) for which the WAF
+	// is bypassed so streaming works — the Coraza handler buffers responses whenever
+	// it's in the path. WebSocket upgrades bypass automatically, independent of this.
+	WAFSkipPaths []string   `json:"waf_skip_paths"`
+	HTTP         HTTPConfig `json:"http"`                // structured proxy controls (headers, auth, rewrite…)
 	RawCaddy        string     `json:"raw_caddy,omitempty"` // advanced escape hatch: a Caddyfile fragment
 	Enabled         bool       `json:"enabled"`
 	CreatedAt       time.Time  `json:"created_at"`

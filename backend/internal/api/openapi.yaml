@@ -902,6 +902,10 @@ components:
         tls_mode: { type: string }
         waf_enabled: { type: boolean }
         waf_mode: { $ref: "#/components/schemas/ServiceWafMode" }
+        waf_skip_paths:
+          type: array
+          items: { type: string }
+          description: Request paths (matched as prefix + subpaths) for which the WAF is bypassed so streaming (SSE) works. WebSocket upgrades bypass automatically regardless. Other protections still apply.
         http: { $ref: "#/components/schemas/HTTPConfig" }
         raw_caddy: { type: string, description: "Advanced: a raw Caddyfile fragment spliced into the route." }
         enabled: { type: boolean }
@@ -947,6 +951,10 @@ components:
         tls_mode: { type: string }
         waf_enabled: { type: boolean }
         waf_mode: { $ref: "#/components/schemas/ServiceWafMode" }
+        waf_skip_paths:
+          type: array
+          items: { type: string }
+          description: Request paths (prefix + subpaths) that bypass the WAF so streaming (SSE) works; WebSocket upgrades bypass automatically.
         http: { $ref: "#/components/schemas/HTTPConfig" }
         raw_caddy: { type: string }
 

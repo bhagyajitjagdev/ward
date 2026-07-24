@@ -17,6 +17,7 @@ export type ServiceFormState = {
   lbPolicy: string
   wafEnabled: boolean
   wafMode: "" | WafMode
+  wafSkipPaths: string[]
   http: HTTPConfig
   rawCaddy: string
   enabled: boolean
@@ -31,6 +32,7 @@ export function emptyServiceForm(): ServiceFormState {
     lbPolicy: "round_robin",
     wafEnabled: true,
     wafMode: "",
+    wafSkipPaths: [],
     http: {},
     rawCaddy: "",
     enabled: true,
@@ -46,6 +48,7 @@ export function serviceToForm(s: Service): ServiceFormState {
     lbPolicy: s.lb_policy,
     wafEnabled: s.waf_enabled,
     wafMode: s.waf_mode,
+    wafSkipPaths: s.waf_skip_paths ?? [],
     http: s.http ?? {},
     rawCaddy: s.raw_caddy ?? "",
     enabled: s.enabled,
@@ -61,6 +64,7 @@ export function formToInput(f: ServiceFormState): ServiceUpdate {
     lb_policy: f.lbPolicy,
     waf_enabled: f.wafEnabled,
     waf_mode: f.wafEnabled ? f.wafMode : "",
+    waf_skip_paths: f.wafEnabled ? f.wafSkipPaths : [],
     http: f.http,
     raw_caddy: f.rawCaddy.trim() || undefined,
     enabled: f.enabled,
@@ -262,19 +266,36 @@ export function ServiceFormFields({
               Protect with Coraza + OWASP CRS
             </label>
             {form.wafEnabled && (
-              <Select
-                value={form.wafMode || "inherit"}
-                onValueChange={(v) => set({ wafMode: v === "inherit" ? "" : (v as WafMode) })}
-              >
-                <SelectTrigger id="svc-wafmode" className="mt-1.5 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">Inherit global default</SelectItem>
-                  <SelectItem value="DetectionOnly">Detection only</SelectItem>
-                  <SelectItem value="On">Enforcing · 403 on attack</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="mt-1.5 space-y-3">
+                <Select
+                  value={form.wafMode || "inherit"}
+                  onValueChange={(v) => set({ wafMode: v === "inherit" ? "" : (v as WafMode) })}
+                >
+                  <SelectTrigger id="svc-wafmode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">Inherit global default</SelectItem>
+                    <SelectItem value="DetectionOnly">Detection only</SelectItem>
+                    <SelectItem value="On">Enforcing · 403 on attack</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="space-y-1.5">
+                  <Label htmlFor="svc-wafskip" className="text-xs text-muted-foreground">
+                    Skip paths <span className="font-normal">— for streaming / SSE</span>
+                  </Label>
+                  <TokenInput
+                    ariaLabel="WAF skip paths"
+                    value={form.wafSkipPaths}
+                    onChange={(wafSkipPaths) => set({ wafSkipPaths })}
+                    placeholder="/sse"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    The WAF is bypassed for these paths so SSE can stream (it buffers responses otherwise). Matches the path
+                    and its subpaths. WebSocket upgrades bypass automatically. IP, geo, and rate-limit still apply.
+                  </p>
+                </div>
+              </div>
             )}
           </Field>
         </Section>

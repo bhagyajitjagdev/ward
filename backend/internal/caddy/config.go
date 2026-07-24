@@ -591,7 +591,7 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 		if mode == "" {
 			mode = opt.WAFEngineMode // inherit the global default
 		}
-		handlers = append(handlers, wafHandler(opt, mode, exclusions))
+		handlers = append(handlers, gatedWAF(wafHandler(opt, mode, exclusions), s.WAFSkipPaths))
 	}
 	// Structured HTTP controls run after the WAF (so it inspects the client's real
 	// request) and before the proxy: auth gate → headers → path rewrite → compression.
@@ -605,6 +605,58 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 			map[string]any{"handler": "subroute", "routes": innerRoutes},
 		},
 	}
+}
+
+// gatedWAF wraps the Coraza handler so it runs only when the request is NOT a
+// WebSocket upgrade and NOT to one of the service's skip paths. Coraza buffers
+// responses and blocks connection upgrades whenever it sits in the request path,
+// which breaks SSE and WebSocket — and no SecLang directive (rule removal, response
+// -body-access off, engine off) avoids it, because the buffering is in the handler
+// itself. So the only fix is to keep those requests out of the handler. Skipped
+// requests fall straight through to the proxy; every other protection still runs.
+func gatedWAF(waf map[string]any, skipPaths []string) map[string]any {
+	// WebSocket upgrades always bypass — a WAF can't inspect WS frames regardless.
+	not := []any{
+		map[string]any{"header": map[string]any{"Upgrade": []string{"websocket"}}},
+	}
+	if globs := wafPathGlobs(skipPaths); len(globs) > 0 {
+		not = append(not, map[string]any{"path": globs})
+	}
+	return map[string]any{
+		"handler": "subroute",
+		"routes": []any{
+			map[string]any{
+				"match":  []any{map[string]any{"not": not}},
+				"handle": []any{waf},
+			},
+		},
+	}
+}
+
+// wafPathGlobs expands each user skip-path into Caddy path-matcher tokens covering
+// the path and its subpaths (e.g. "/sse" → "/sse", "/sse/*"). An entry that already
+// contains a "*" is honored verbatim; a missing leading slash is added.
+func wafPathGlobs(paths []string) []string {
+	var globs []string
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		if strings.Contains(p, "*") {
+			globs = append(globs, p)
+			continue
+		}
+		if p = strings.TrimRight(p, "/"); p == "" { // root
+			globs = append(globs, "/*")
+			continue
+		}
+		globs = append(globs, p, p+"/*")
+	}
+	return globs
 }
 
 // securityHeaderPreset is the one-click "security headers" set — safe, always-good

@@ -149,6 +149,104 @@ func TestGenerateWithRawRoutes(t *testing.T) {
 	}
 }
 
+func TestGenerateWAFSkipPaths(t *testing.T) {
+	// A WAF service with a skip path: the Coraza handler must be gated behind a `not`
+	// matcher that skips both WebSocket upgrades and the listed path (+ its subpaths).
+	services := []model.Service{
+		{ID: "s1", Name: "api", PublicHostname: "api.example.com",
+			PublicHostnames: []string{"api.example.com"}, Upstreams: []string{"api:80"},
+			Enabled: true, WAFEnabled: true, WAFMode: "On", WAFSkipPaths: []string{"/sse"}},
+	}
+	out, err := Generate(Input{Services: services}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"handler": "waf"`) {
+		t.Fatal("waf handler missing — it should still be present, just gated")
+	}
+	for _, want := range []string{`"not"`, `"Upgrade"`, `"websocket"`, `"/sse"`, `"/sse/*"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("gated WAF config missing %q", want)
+		}
+	}
+	// Structural check (byte order is unreliable — MarshalIndent sorts keys): the waf
+	// handler must live inside a route whose matcher is a not(websocket|path) gate.
+	var cfg map[string]any
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !hasGatedWAF(cfg) {
+		t.Error("waf handler is not gated behind a not(websocket/path) matcher")
+	}
+}
+
+// hasGatedWAF reports whether the config tree contains a route whose match is a
+// not(...websocket/path...) gate and whose handle carries the waf handler.
+func hasGatedWAF(v any) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		if m, okM := x["match"]; okM {
+			if h, okH := x["handle"]; okH {
+				mj, _ := json.Marshal(m)
+				hj, _ := json.Marshal(h)
+				if strings.Contains(string(mj), `"not"`) && strings.Contains(string(mj), "websocket") &&
+					strings.Contains(string(hj), `"handler":"waf"`) {
+					return true
+				}
+			}
+		}
+		for _, val := range x {
+			if hasGatedWAF(val) {
+				return true
+			}
+		}
+	case []any:
+		for _, val := range x {
+			if hasGatedWAF(val) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestGenerateWAFAutoWebSocketBypass(t *testing.T) {
+	// Even with no skip paths, a WAF service auto-bypasses WebSocket upgrades.
+	services := []model.Service{
+		{ID: "s1", Name: "api", PublicHostname: "api.example.com",
+			PublicHostnames: []string{"api.example.com"}, Upstreams: []string{"api:80"},
+			Enabled: true, WAFEnabled: true, WAFMode: "On"},
+	}
+	out, err := Generate(Input{Services: services}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"Upgrade"`) || !strings.Contains(s, `"websocket"`) {
+		t.Error("a WAF service should auto-bypass WebSocket upgrades even with no skip paths")
+	}
+}
+
+func TestWAFPathGlobs(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want []string
+	}{
+		{[]string{"/sse"}, []string{"/sse", "/sse/*"}},
+		{[]string{"sse"}, []string{"/sse", "/sse/*"}},                       // missing slash added
+		{[]string{"/socket.io/"}, []string{"/socket.io", "/socket.io/*"}},   // trailing slash trimmed
+		{[]string{"/api/*"}, []string{"/api/*"}},                            // explicit glob honored
+		{[]string{"  ", ""}, nil},                                           // blanks dropped
+		{[]string{"/"}, []string{"/*"}},                                     // root
+	}
+	for _, c := range cases {
+		if got := wafPathGlobs(c.in); strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("wafPathGlobs(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
 func TestGenerateMultiHostname(t *testing.T) {
 	services := []model.Service{
 		{ID: "s1", Name: "api", PublicHostname: "api.example.com",

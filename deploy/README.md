@@ -51,6 +51,43 @@ volume (or `ward_db` in SQLite mode).
   (`box-b.mesh:port`, or a private IP:port). Only Box A's `:80`/`:443` face the internet; public
   DNS for your test hostnames → Box A's public IP (needed for real Let's Encrypt).
 
+## Streaming: WebSocket & SSE
+
+A WAF sits in the request path and **buffers the response** to inspect it — which breaks streaming:
+Server-Sent Events (SSE) are held until the stream closes, and WebSocket handshakes time out. This
+is structural to the Coraza handler (no `SecRuleEngine`, response-body-access, or rule-removal
+setting avoids it), so Ward handles it by keeping streaming requests *out* of the WAF:
+
+- **WebSocket — automatic.** Any request with `Upgrade: websocket` bypasses the WAF, no config
+  needed. A WAF can't inspect WebSocket frames anyway (only the handshake), so this gives up nothing.
+- **SSE / other streaming — per service.** In the service form, under **WAF → Skip paths**, add the
+  streaming path (e.g. `/events`, `/api/stream`). The WAF is bypassed for that path **and its
+  subpaths**; the request falls straight through to the proxy and streams normally.
+
+**Still enforced on skipped paths:** IP blocklist, geo, and rate-limit — only Coraza is skipped.
+
+**Security note:** a skipped path loses WAF request inspection, so scope it to the exact streaming
+endpoints — don't skip broad prefixes like `/api/*`. Your app's own input validation and the other
+protections still stand.
+
+## Environment variables
+
+Set on the `ward` service (see [`docker-compose.yml`](docker-compose.yml)); most have sensible
+defaults, and the deploy-facing ones are in [`.env.example`](.env.example).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WARD_DB` | SQLite on `ward_db` | Database. A `postgres://…` DSN switches to Postgres. |
+| `WARD_ADDR` | `:8080` | Management API + UI listen address — keep **private**. |
+| `WARD_ACME_EMAIL` | — | Contact email for Let's Encrypt (also settable in the UI). |
+| `WARD_HTTP_PORT` | `:80` | Edge HTTP listen port — override for dev / rootless hosts that can't bind `:80`. |
+| `WARD_HTTPS_PORT` | `:443` | Edge HTTPS listen port. |
+| `WARD_CADDY_AUTO_HTTPS` | off | Set `1` to enable Caddy automatic HTTPS (ACME issuance + HTTP→HTTPS redirects). |
+| `WARD_CADDY_ADMIN` | `http://localhost:2019` | Caddy admin API URL Ward drives — **unauthenticated; never publish `:2019`.** |
+| `WARD_WAF_ENGINE` | `DetectionOnly` | Initial global WAF mode (`DetectionOnly` / `On`); also managed in the UI (Settings). |
+| `WARD_CROWDSEC_API_URL` / `WARD_CROWDSEC_API_KEY` | — | CrowdSec LAPI URL + bouncer key (both present ⇒ CrowdSec enabled). |
+| `WARD_ACCESS_LOG` / `WARD_WAF_AUDIT_LOG` | volume paths | Where Caddy writes the access / Coraza-audit JSON logs. |
+
 ## Security invariants
 
 - **Caddy admin API (`:2019`) is never published** — it's unauthenticated; keep it on the

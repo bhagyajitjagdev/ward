@@ -153,6 +153,14 @@ func caddyOptions() caddy.Options {
 	if v := os.Getenv("WARD_CADDY_ADMIN_LISTEN"); v != "" {
 		opt.AdminListen = v
 	}
+	// Override the edge's HTTP/HTTPS listen ports (default :80/:443) — for dev or a
+	// rootless host that can't bind privileged ports.
+	if v := os.Getenv("WARD_HTTP_PORT"); v != "" {
+		opt.HTTPPort = v
+	}
+	if v := os.Getenv("WARD_HTTPS_PORT"); v != "" {
+		opt.HTTPSPort = v
+	}
 	if v := os.Getenv("WARD_WAF_ENGINE"); v != "" {
 		opt.WAFEngineMode = v
 	}

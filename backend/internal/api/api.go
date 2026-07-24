@@ -299,6 +299,30 @@ func sanitizeService(s model.Service) model.Service {
 	return s
 }
 
+// normalizeSkipPaths trims and de-dupes a service's WAF skip paths and gives each a
+// leading slash. Empty entries are dropped; an empty result becomes nil.
+func normalizeSkipPaths(in *model.Service) {
+	if len(in.WAFSkipPaths) == 0 {
+		return
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in.WAFSkipPaths))
+	for _, p := range in.WAFSkipPaths {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	in.WAFSkipPaths = out
+}
+
 func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 	var in model.Service
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -317,6 +341,7 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
 		return
 	}
+	normalizeSkipPaths(&in)
 	if code, msg := h.checkServiceHostnames(r.Context(), &in, ""); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
@@ -381,6 +406,7 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
 		return
 	}
+	normalizeSkipPaths(&in)
 	if code, msg := h.checkServiceHostnames(r.Context(), &in, r.PathValue("id")); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return

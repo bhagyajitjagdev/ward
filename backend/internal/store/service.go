@@ -44,6 +44,7 @@ type serviceRow struct {
 	TLSMode        string    `bun:"tls_mode,notnull"`
 	WAFEnabled     bool      `bun:"waf_enabled,notnull"`
 	WAFMode        string    `bun:"waf_mode,notnull"`
+	WAFSkipPaths   string    `bun:"waf_skip_paths,notnull"` // JSON array of paths that bypass the WAF
 	Enabled        bool      `bun:"enabled,notnull"`
 	CreatedAt      time.Time `bun:"created_at,notnull"`
 	UpdatedAt      time.Time `bun:"updated_at,notnull"`
@@ -69,6 +70,12 @@ func (r serviceRow) toModel() (model.Service, error) {
 		}
 	}
 	http.BasicAuthPassword = "" // write-only; never surfaced from storage
+	skip := []string{}
+	if r.WAFSkipPaths != "" {
+		if err := json.Unmarshal([]byte(r.WAFSkipPaths), &skip); err != nil {
+			return model.Service{}, err
+		}
+	}
 	return model.Service{
 		ID:              r.ID,
 		Name:            r.Name,
@@ -81,6 +88,7 @@ func (r serviceRow) toModel() (model.Service, error) {
 		TLSMode:         r.TLSMode,
 		WAFEnabled:      r.WAFEnabled,
 		WAFMode:         r.WAFMode,
+		WAFSkipPaths:    skip,
 		Enabled:         r.Enabled,
 		CreatedAt:       r.CreatedAt,
 		UpdatedAt:       r.UpdatedAt,
@@ -168,6 +176,10 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 	if err != nil {
 		return model.Service{}, err
 	}
+	skip, err := json.Marshal(orEmpty(in.WAFSkipPaths))
+	if err != nil {
+		return model.Service{}, err
+	}
 	now := time.Now().UTC()
 	row := serviceRow{
 		ID:             id.String(),
@@ -181,6 +193,7 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 		TLSMode:        orDefault(in.TLSMode, "internal"),
 		WAFEnabled:     in.WAFEnabled,
 		WAFMode:        in.WAFMode,
+		WAFSkipPaths:   string(skip),
 		Enabled:        true,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -239,6 +252,10 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 	if err != nil {
 		return model.Service{}, err
 	}
+	skip, err := json.Marshal(orEmpty(in.WAFSkipPaths))
+	if err != nil {
+		return model.Service{}, err
+	}
 	row := serviceRow{
 		ID:             id,
 		Name:           in.Name,
@@ -251,11 +268,12 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 		TLSMode:        orDefault(in.TLSMode, "internal"),
 		WAFEnabled:     in.WAFEnabled,
 		WAFMode:        in.WAFMode,
+		WAFSkipPaths:   string(skip),
 		Enabled:        in.Enabled,
 		UpdatedAt:      time.Now().UTC(),
 	}
 	res, err := s.DB.NewUpdate().Model(&row).
-		Column("name", "public_hostname", "extra_hostnames", "http_config", "raw_caddy", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "enabled", "updated_at").
+		Column("name", "public_hostname", "extra_hostnames", "http_config", "raw_caddy", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "waf_skip_paths", "enabled", "updated_at").
 		WherePK().Exec(ctx)
 	if err != nil {
 		if isUniqueViolation(err) {
