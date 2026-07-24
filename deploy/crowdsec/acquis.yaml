@@ -1,0 +1,6 @@
+# Feed CrowdSec the same JSON access log Caddy writes (and Ward tails). The
+# crowdsecurity/caddy collection's parser reads it; scenarios then decide bans.
+filenames:
+  - /waf/access.json
+labels:
+  type: caddy

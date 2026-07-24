@@ -42,6 +42,11 @@ services:
       WARD_ACCESS_LOG: "/waf/access.json" # Caddy writes + ward tails the JSON access log
       WARD_UI: "1"
       WARD_ACME_EMAIL: "${WARD_ACME_EMAIL:-}"
+      # CrowdSec LAPI coordinates (deployment secrets). Present → Ward can observe
+      # decisions and the enable toggle appears; the bouncer key is injected into the
+      # generated Caddy config. Leave CROWDSEC_BOUNCER_KEY unset to run without CrowdSec.
+      WARD_CROWDSEC_API_URL: "${CROWDSEC_BOUNCER_KEY:+http://crowdsec:8080/}"
+      WARD_CROWDSEC_API_KEY: "${CROWDSEC_BOUNCER_KEY:-}"
     volumes:
       - ward_db:/data
       - geoip:/geoip
@@ -52,6 +57,25 @@ services:
       #   ssh -L 8080:localhost:8080 <box-a>
       # or change the bind to a mesh/VPN interface IP.
       - "127.0.0.1:8080:8080"
+    networks: [edge]
+
+  # CrowdSec agent + LAPI. Detects attacks from Caddy's access log; the bouncer
+  # compiled into ward-caddy enforces the decisions in the request path. Enable by
+  # setting CROWDSEC_BOUNCER_KEY in .env (and flip the toggle in Ward → Settings).
+  # Ward is never in this path — it configures the bouncer and observes read-only.
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    restart: unless-stopped
+    profiles: [crowdsec]
+    environment:
+      # Install the Caddy parser + HTTP scenarios, and register the ward-caddy bouncer.
+      COLLECTIONS: "crowdsecurity/caddy"
+      BOUNCER_KEY_ward: "${CROWDSEC_BOUNCER_KEY:-}"
+    volumes:
+      - crowdsec_data:/var/lib/crowdsec/data # decisions DB + hub state — persist
+      - crowdsec_config:/etc/crowdsec        # config (collections, parsers)
+      - waf_audit:/waf:ro                     # read Caddy's JSON access log
+      - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.d/caddy.yaml:ro
     networks: [edge]
 
   # Optional Postgres. Enable with `--profile postgres` and set WARD_DB in .env to
@@ -80,3 +104,5 @@ volumes:
   geoip:
   certs:
   waf_audit:
+  crowdsec_data: # CrowdSec decisions DB + hub state — back this up
+  crowdsec_config:
