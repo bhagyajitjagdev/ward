@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils"
 import { PageHeader, StatusDot, Mono } from "@/components/console"
 import { useServices } from "@/data/queries"
 import { api, ApiError } from "@/lib/api"
-import type { Service, WafMode } from "@/lib/api"
+import type { Service, WafMode, HTTPConfig } from "@/lib/api"
+import { ServiceHttpOptions } from "@/components/service-http-options"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -196,6 +197,8 @@ function CreateServiceDialog() {
   const [tlsMode, setTlsMode] = useState("managed")
   const [lbPolicy, setLbPolicy] = useState("round_robin")
   const [wafEnabled, setWafEnabled] = useState(true)
+  const [http, setHttp] = useState<HTTPConfig>({})
+  const [rawCaddy, setRawCaddy] = useState("")
 
   const create = useMutation({
     mutationFn: () =>
@@ -206,6 +209,8 @@ function CreateServiceDialog() {
         tls_mode: tlsMode,
         lb_policy: lbPolicy,
         waf_enabled: wafEnabled,
+        http,
+        raw_caddy: rawCaddy.trim() || undefined,
       }),
     onSuccess: (svc) => {
       qc.invalidateQueries({ queryKey: ["services"] })
@@ -218,6 +223,8 @@ function CreateServiceDialog() {
       setTlsMode("managed")
       setLbPolicy("round_robin")
       setWafEnabled(true)
+      setHttp({})
+      setRawCaddy("")
     },
     onError: (err) =>
       toast.error(err instanceof ApiError ? err.message : "Couldn't create the service"),
@@ -230,7 +237,7 @@ function CreateServiceDialog() {
           <Plus className="size-4" /> Add service
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[88vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add service</DialogTitle>
           <DialogDescription>
@@ -317,6 +324,7 @@ function CreateServiceDialog() {
               </span>
             </span>
           </label>
+          <ServiceHttpOptions value={http} onChange={setHttp} rawCaddy={rawCaddy} onRawChange={setRawCaddy} />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel

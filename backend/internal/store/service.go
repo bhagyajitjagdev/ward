@@ -37,6 +37,8 @@ type serviceRow struct {
 	Name           string    `bun:"name,notnull"`
 	PublicHostname string    `bun:"public_hostname,notnull"` // primary — DB-unique
 	ExtraHostnames string    `bun:"extra_hostnames,notnull"` // JSON array of additional hostnames
+	HTTPConfig     string    `bun:"http_config,notnull"`     // JSON model.HTTPConfig
+	RawCaddy       string    `bun:"raw_caddy,notnull"`       // advanced escape-hatch Caddyfile fragment
 	Upstreams      string    `bun:"upstreams,notnull"`
 	LBPolicy       string    `bun:"lb_policy,notnull"`
 	TLSMode        string    `bun:"tls_mode,notnull"`
@@ -60,11 +62,20 @@ func (r serviceRow) toModel() (model.Service, error) {
 			return model.Service{}, err
 		}
 	}
+	http := model.HTTPConfig{}
+	if r.HTTPConfig != "" {
+		if err := json.Unmarshal([]byte(r.HTTPConfig), &http); err != nil {
+			return model.Service{}, err
+		}
+	}
+	http.BasicAuthPassword = "" // write-only; never surfaced from storage
 	return model.Service{
 		ID:              r.ID,
 		Name:            r.Name,
 		PublicHostname:  r.PublicHostname,
 		PublicHostnames: append([]string{r.PublicHostname}, extras...),
+		HTTP:            http,
+		RawCaddy:        r.RawCaddy,
 		Upstreams:       ups,
 		LBPolicy:        r.LBPolicy,
 		TLSMode:         r.TLSMode,
@@ -74,6 +85,17 @@ func (r serviceRow) toModel() (model.Service, error) {
 		CreatedAt:       r.CreatedAt,
 		UpdatedAt:       r.UpdatedAt,
 	}, nil
+}
+
+// marshalHTTP serializes a service's HTTP config for storage, dropping the
+// write-only plaintext password (only the bcrypt hash is persisted).
+func marshalHTTP(h model.HTTPConfig) (string, error) {
+	h.BasicAuthPassword = ""
+	b, err := json.Marshal(h)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // splitHostnames derives the primary hostname + a JSON array of the extras from a
@@ -142,12 +164,18 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 	if err != nil {
 		return model.Service{}, err
 	}
+	httpCfg, err := marshalHTTP(in.HTTP)
+	if err != nil {
+		return model.Service{}, err
+	}
 	now := time.Now().UTC()
 	row := serviceRow{
 		ID:             id.String(),
 		Name:           in.Name,
 		PublicHostname: primary,
 		ExtraHostnames: extras,
+		HTTPConfig:     httpCfg,
+		RawCaddy:       in.RawCaddy,
 		Upstreams:      string(ups),
 		LBPolicy:       orDefault(in.LBPolicy, "round_robin"),
 		TLSMode:        orDefault(in.TLSMode, "internal"),
@@ -207,11 +235,17 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 	if err != nil {
 		return model.Service{}, err
 	}
+	httpCfg, err := marshalHTTP(in.HTTP)
+	if err != nil {
+		return model.Service{}, err
+	}
 	row := serviceRow{
 		ID:             id,
 		Name:           in.Name,
 		PublicHostname: primary,
 		ExtraHostnames: extras,
+		HTTPConfig:     httpCfg,
+		RawCaddy:       in.RawCaddy,
 		Upstreams:      string(ups),
 		LBPolicy:       orDefault(in.LBPolicy, "round_robin"),
 		TLSMode:        orDefault(in.TLSMode, "internal"),
@@ -221,7 +255,7 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 		UpdatedAt:      time.Now().UTC(),
 	}
 	res, err := s.DB.NewUpdate().Model(&row).
-		Column("name", "public_hostname", "extra_hostnames", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "enabled", "updated_at").
+		Column("name", "public_hostname", "extra_hostnames", "http_config", "raw_caddy", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "enabled", "updated_at").
 		WherePK().Exec(ctx)
 	if err != nil {
 		if isUniqueViolation(err) {

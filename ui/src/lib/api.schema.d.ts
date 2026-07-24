@@ -754,11 +754,34 @@ export interface components {
             tls_mode: string;
             waf_enabled: boolean;
             waf_mode: components["schemas"]["ServiceWafMode"];
+            http?: components["schemas"]["HTTPConfig"];
+            /** @description Advanced: a raw Caddyfile fragment spliced into the route. */
+            raw_caddy?: string;
             enabled: boolean;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        /** @description Structured per-service proxy controls. basic_auth_password is write-only; the hash is never returned. */
+        HTTPConfig: {
+            /** @description One-click HSTS + safe response headers. */
+            security_headers?: boolean;
+            /** @description Headers set on the request to the upstream. */
+            request_headers?: {
+                [key: string]: string;
+            };
+            /** @description Headers set on the response to the client (override the security preset). */
+            response_headers?: {
+                [key: string]: string;
+            };
+            /** @description Response headers to strip (e.g. Server). */
+            remove_headers?: string[];
+            basic_auth_user?: string;
+            /** @description Write-only; bcrypted server-side, never returned. */
+            basic_auth_password?: string;
+            strip_path_prefix?: string;
+            compression?: boolean;
         };
         ServiceInput: {
             name: string;
@@ -771,6 +794,8 @@ export interface components {
             tls_mode?: string;
             waf_enabled?: boolean;
             waf_mode?: components["schemas"]["ServiceWafMode"];
+            http?: components["schemas"]["HTTPConfig"];
+            raw_caddy?: string;
         };
         ServiceUpdate: components["schemas"]["ServiceInput"] & {
             enabled: boolean;

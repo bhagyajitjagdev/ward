@@ -78,6 +78,7 @@ func main() {
 			RateLimits:   rateLimits,
 			GeoRules:     geoRules,
 			Certificates: caddy.ResolveCustomCerts(),
+			RawRoutes:    caddy.AdaptRawRoutes(services),
 		}, opt)
 		if err != nil {
 			log.Fatal(err)

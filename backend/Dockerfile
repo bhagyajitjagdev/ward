@@ -24,6 +24,9 @@ RUN CGO_ENABLED=0 go build -tags embed_ui -ldflags="-s -w -X main.version=${VERS
 FROM alpine:3
 RUN apk add --no-cache ca-certificates wget && mkdir -p /data /geoip /certs /waf
 COPY --from=build /ward /usr/local/bin/ward
+# A plain Caddy binary — used only to `caddy adapt` a service's advanced Caddyfile
+# fragment into JSON (the edge itself runs the separate ward-caddy image).
+COPY --from=caddy:2.11.4 /usr/bin/caddy /usr/local/bin/caddy
 ENV WARD_ADDR=":8080" \
     WARD_UI="1" \
     WARD_DB="file:/data/ward.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"

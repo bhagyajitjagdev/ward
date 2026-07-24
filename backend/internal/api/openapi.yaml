@@ -902,9 +902,33 @@ components:
         tls_mode: { type: string }
         waf_enabled: { type: boolean }
         waf_mode: { $ref: "#/components/schemas/ServiceWafMode" }
+        http: { $ref: "#/components/schemas/HTTPConfig" }
+        raw_caddy: { type: string, description: "Advanced: a raw Caddyfile fragment spliced into the route." }
         enabled: { type: boolean }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+
+    HTTPConfig:
+      type: object
+      description: Structured per-service proxy controls. basic_auth_password is write-only; the hash is never returned.
+      properties:
+        security_headers: { type: boolean, description: One-click HSTS + safe response headers. }
+        request_headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Headers set on the request to the upstream.
+        response_headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Headers set on the response to the client (override the security preset).
+        remove_headers:
+          type: array
+          items: { type: string }
+          description: Response headers to strip (e.g. Server).
+        basic_auth_user: { type: string }
+        basic_auth_password: { type: string, description: "Write-only; bcrypted server-side, never returned." }
+        strip_path_prefix: { type: string }
+        compression: { type: boolean }
 
     ServiceInput:
       type: object
@@ -923,6 +947,8 @@ components:
         tls_mode: { type: string }
         waf_enabled: { type: boolean }
         waf_mode: { $ref: "#/components/schemas/ServiceWafMode" }
+        http: { $ref: "#/components/schemas/HTTPConfig" }
+        raw_caddy: { type: string }
 
     ServiceUpdate:
       allOf:

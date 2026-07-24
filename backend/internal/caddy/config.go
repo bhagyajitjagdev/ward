@@ -104,6 +104,10 @@ type Input struct {
 	RateLimits   []model.RateLimit
 	GeoRules     []model.GeoRule
 	Certificates []CustomCert
+	// RawRoutes holds pre-adapted Caddy route objects (from a service's raw_caddy
+	// Caddyfile fragment) keyed by service id — spliced into that service's route.
+	// Adapted outside Generate (needs the caddy binary) so this stays pure.
+	RawRoutes map[string][]json.RawMessage
 }
 
 // Generate builds a full Caddy JSON config from the desired edge state. Global
@@ -209,7 +213,7 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		// then user-authored custom rules.
 		excl := append(append([]string{}, globalExcl...), exclByService[s.ID]...)
 		excl = append(append(excl, globalRules...), rulesByService[s.ID]...)
-		svcRoutes = append(svcRoutes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID]))
+		svcRoutes = append(svcRoutes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID], in.RawRoutes[s.ID]))
 		hostnames := serviceHostnames(s)
 		switch s.TLSMode {
 		case "none":
@@ -562,14 +566,20 @@ func GenerateExclusionSecLang(seclangID, ruleID int, pathMatch, path string, met
 	return fmt.Sprintf(`SecRule %s "%s %s" "id:%d,phase:1,pass,nolog,%s"`, variable, operator, value, seclangID, ctl)
 }
 
-// serviceRoute builds one host-matched route: [ip rules] → [geo rules] → [rate_limit?] → [waf?] → reverse_proxy.
-func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []model.BlockedIP, rateLimits []model.RateLimit, geoRules []model.GeoRule) map[string]any {
-	innerRoutes := make([]any, 0, 4)
+// serviceRoute builds one host-matched route: [ip rules] → [geo rules] → [raw
+// Caddyfile routes] → [rate_limit?] → [waf?] → [http controls] → reverse_proxy.
+func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []model.BlockedIP, rateLimits []model.RateLimit, geoRules []model.GeoRule, rawRoutes []json.RawMessage) map[string]any {
+	innerRoutes := make([]any, 0, 4+len(rawRoutes))
 	for _, r := range ipRoutes(blocks) {
 		innerRoutes = append(innerRoutes, r)
 	}
 	for _, r := range geoRoutes(geoRules, opt.GeoIPDBPath) {
 		innerRoutes = append(innerRoutes, r)
+	}
+	// Advanced escape hatch: the user's adapted Caddyfile routes run here — after
+	// deny gates, before the WAF/proxy. json.RawMessage marshals through verbatim.
+	for _, rr := range rawRoutes {
+		innerRoutes = append(innerRoutes, rr)
 	}
 
 	handlers := make([]any, 0, 3)
@@ -583,6 +593,9 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 		}
 		handlers = append(handlers, wafHandler(opt, mode, exclusions))
 	}
+	// Structured HTTP controls run after the WAF (so it inspects the client's real
+	// request) and before the proxy: auth gate → headers → path rewrite → compression.
+	handlers = append(handlers, httpConfigHandlers(s.HTTP)...)
 	handlers = append(handlers, reverseProxyHandler(s))
 	innerRoutes = append(innerRoutes, map[string]any{"handle": handlers})
 
@@ -592,6 +605,78 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 			map[string]any{"handler": "subroute", "routes": innerRoutes},
 		},
 	}
+}
+
+// securityHeaderPreset is the one-click "security headers" set — safe, always-good
+// response headers. Deliberately no CSP (too app-specific to force; a manual header).
+func securityHeaderPreset() map[string]string {
+	return map[string]string{
+		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "SAMEORIGIN",
+		"Referrer-Policy":           "strict-origin-when-cross-origin",
+	}
+}
+
+// httpConfigHandlers renders a service's structured HTTP controls into ordered Caddy
+// handlers that sit between the WAF and the reverse_proxy.
+func httpConfigHandlers(h model.HTTPConfig) []any {
+	var out []any
+
+	if h.BasicAuthUser != "" && h.BasicAuthHash != "" {
+		out = append(out, map[string]any{
+			"handler": "authentication",
+			"providers": map[string]any{
+				"http_basic": map[string]any{
+					"hash":     map[string]any{"algorithm": "bcrypt"},
+					"accounts": []any{map[string]any{"username": h.BasicAuthUser, "password": h.BasicAuthHash}},
+				},
+			},
+		})
+	}
+
+	reqSet := map[string]any{}
+	for k, v := range h.RequestHeaders {
+		reqSet[k] = []string{v}
+	}
+	respSet := map[string]any{}
+	if h.SecurityHeaders {
+		for k, v := range securityHeaderPreset() {
+			respSet[k] = []string{v}
+		}
+	}
+	for k, v := range h.ResponseHeaders { // explicit response headers win over the preset
+		respSet[k] = []string{v}
+	}
+	if len(reqSet) > 0 || len(respSet) > 0 || len(h.RemoveHeaders) > 0 {
+		hh := map[string]any{"handler": "headers"}
+		if len(reqSet) > 0 {
+			hh["request"] = map[string]any{"set": reqSet}
+		}
+		resp := map[string]any{}
+		if len(respSet) > 0 {
+			resp["set"] = respSet
+		}
+		if len(h.RemoveHeaders) > 0 {
+			resp["delete"] = h.RemoveHeaders
+		}
+		if len(resp) > 0 {
+			resp["deferred"] = true // apply to the response after the upstream sets its own
+			hh["response"] = resp
+		}
+		out = append(out, hh)
+	}
+
+	if h.StripPathPrefix != "" {
+		out = append(out, map[string]any{"handler": "rewrite", "strip_path_prefix": h.StripPathPrefix})
+	}
+	if h.Compression {
+		out = append(out, map[string]any{
+			"handler":   "encode",
+			"encodings": map[string]any{"gzip": map[string]any{}, "zstd": map[string]any{}},
+		})
+	}
+	return out
 }
 
 func reverseProxyHandler(s model.Service) map[string]any {

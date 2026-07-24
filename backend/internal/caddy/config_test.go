@@ -125,6 +125,30 @@ func TestGenerateWithCustomRules(t *testing.T) {
 	}
 }
 
+func TestGenerateWithRawRoutes(t *testing.T) {
+	services := []model.Service{
+		{ID: "s1", Name: "api", PublicHostname: "api.example.com",
+			PublicHostnames: []string{"api.example.com"}, Upstreams: []string{"api:80"},
+			Enabled: true, RawCaddy: "header X-Foo bar"},
+	}
+	// Pre-adapted routes (what AdaptFragment would return for the fragment).
+	raw := map[string][]json.RawMessage{
+		"s1": {json.RawMessage(`{"handle":[{"handler":"headers","response":{"set":{"X-Foo":["bar"]}}}]}`)},
+	}
+	out, err := Generate(Input{Services: services, RawRoutes: raw}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"X-Foo"`) {
+		t.Error("raw route not spliced into the service route")
+	}
+	// The raw route must sit before the reverse_proxy in the same subroute.
+	if xf, rp := strings.Index(s, `"X-Foo"`), strings.Index(s, `"reverse_proxy"`); xf < 0 || rp < 0 || xf > rp {
+		t.Errorf("raw route should precede the proxy (X-Foo %d, reverse_proxy %d)", xf, rp)
+	}
+}
+
 func TestGenerateMultiHostname(t *testing.T) {
 	services := []model.Service{
 		{ID: "s1", Name: "api", PublicHostname: "api.example.com",

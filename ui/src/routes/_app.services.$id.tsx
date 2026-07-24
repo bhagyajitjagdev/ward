@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils"
 import { certForHost } from "@/lib/certs"
 import { PageHeader, StatusDot, SeverityBadge, Mono, ago, normalizeSeverity } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
-import type { Service, WafMode } from "@/lib/api"
+import type { Service, WafMode, HTTPConfig } from "@/lib/api"
+import { ServiceHttpOptions } from "@/components/service-http-options"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TokenInput } from "@/components/ui/token-input"
@@ -265,6 +266,8 @@ function EditDialog({ service }: { service: Service }) {
   const [wafEnabled, setWafEnabled] = useState(service.waf_enabled)
   const [wafMode, setWafMode] = useState<"" | WafMode>(service.waf_mode)
   const [enabled, setEnabled] = useState(service.enabled)
+  const [http, setHttp] = useState<HTTPConfig>(service.http ?? {})
+  const [rawCaddy, setRawCaddy] = useState(service.raw_caddy ?? "")
 
   const save = useMutation({
     mutationFn: () =>
@@ -276,6 +279,8 @@ function EditDialog({ service }: { service: Service }) {
         lb_policy: lbPolicy,
         waf_enabled: wafEnabled,
         waf_mode: wafEnabled ? wafMode : "",
+        http,
+        raw_caddy: rawCaddy.trim() || undefined,
         enabled,
       }),
     onSuccess: () => {
@@ -295,7 +300,7 @@ function EditDialog({ service }: { service: Service }) {
           <Pencil className="size-4" /> Edit
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[88vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit service</DialogTitle>
           <DialogDescription>Changes regenerate the Caddy route and apply to the edge, with a rollback snapshot.</DialogDescription>
@@ -382,6 +387,7 @@ function EditDialog({ service }: { service: Service }) {
               Enabled (serving traffic)
             </label>
           </div>
+          <ServiceHttpOptions value={http} onChange={setHttp} rawCaddy={rawCaddy} onRawChange={setRawCaddy} editing />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel

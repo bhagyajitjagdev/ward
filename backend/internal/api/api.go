@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bhagyajitjagdev/ward/backend/internal/auth"
 	"github.com/bhagyajitjagdev/ward/backend/internal/caddy"
 	"github.com/bhagyajitjagdev/ward/backend/internal/certs"
 	"github.com/bhagyajitjagdev/ward/backend/internal/crowdsec"
@@ -217,6 +218,9 @@ func (h *Handler) listServices(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	for i := range svcs {
+		svcs[i] = sanitizeService(svcs[i])
+	}
 	writeJSON(w, http.StatusOK, svcs)
 }
 
@@ -262,6 +266,39 @@ func (h *Handler) checkServiceHostnames(ctx context.Context, in *model.Service, 
 	return 0, ""
 }
 
+// prepareServiceHTTP handles the write-only basic-auth password: bcrypt it into the
+// hash, keep the existing hash on update when no new password is given, or clear it
+// when auth is turned off. existingHash is "" for a create.
+func prepareServiceHTTP(in *model.Service, existingHash string) (int, string) {
+	hc := &in.HTTP
+	if hc.BasicAuthUser == "" {
+		hc.BasicAuthHash = ""
+		hc.BasicAuthPassword = ""
+		return 0, ""
+	}
+	switch {
+	case hc.BasicAuthPassword != "":
+		hash, err := auth.HashPassword(hc.BasicAuthPassword)
+		if err != nil {
+			return http.StatusInternalServerError, err.Error()
+		}
+		hc.BasicAuthHash = hash
+	case existingHash != "":
+		hc.BasicAuthHash = existingHash // keep the current password
+	default:
+		return http.StatusBadRequest, "basic auth: a password is required"
+	}
+	hc.BasicAuthPassword = ""
+	return 0, ""
+}
+
+// sanitizeService blanks the basic-auth secret before a service leaves the API.
+func sanitizeService(s model.Service) model.Service {
+	s.HTTP.BasicAuthHash = ""
+	s.HTTP.BasicAuthPassword = ""
+	return s
+}
+
 func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 	var in model.Service
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -284,6 +321,16 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
+	if code, msg := prepareServiceHTTP(&in, ""); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
+		return
+	}
+	if in.RawCaddy != "" {
+		if _, err := caddy.AdaptFragment(in.RawCaddy); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "advanced Caddyfile: " + err.Error()})
+			return
+		}
+	}
 
 	svc, err := h.store.CreateService(r.Context(), in)
 	if err != nil {
@@ -300,7 +347,7 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 	h.reconcile(r.Context())
 	h.audit(r, "service.create", "service:"+svc.ID, svc.PublicHostname)
 
-	writeJSON(w, http.StatusCreated, svc)
+	writeJSON(w, http.StatusCreated, sanitizeService(svc))
 }
 
 func (h *Handler) getService(w http.ResponseWriter, r *http.Request) {
@@ -313,7 +360,7 @@ func (h *Handler) getService(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, svc)
+	writeJSON(w, http.StatusOK, sanitizeService(svc))
 }
 
 func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
@@ -338,6 +385,23 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
+	// Fetch the current service for the existing basic-auth hash (kept when no new
+	// password is supplied). ErrNotFound surfaces below via UpdateService.
+	existing, existErr := h.store.GetService(r.Context(), r.PathValue("id"))
+	existingHash := ""
+	if existErr == nil {
+		existingHash = existing.HTTP.BasicAuthHash
+	}
+	if code, msg := prepareServiceHTTP(&in, existingHash); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
+		return
+	}
+	if in.RawCaddy != "" {
+		if _, err := caddy.AdaptFragment(in.RawCaddy); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "advanced Caddyfile: " + err.Error()})
+			return
+		}
+	}
 
 	svc, err := h.store.UpdateService(r.Context(), r.PathValue("id"), in)
 	if errors.Is(err, store.ErrNotFound) {
@@ -355,7 +419,7 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 
 	h.reconcile(r.Context())
 	h.audit(r, "service.update", "service:"+svc.ID, svc.PublicHostname)
-	writeJSON(w, http.StatusOK, svc)
+	writeJSON(w, http.StatusOK, sanitizeService(svc))
 }
 
 func (h *Handler) deleteService(w http.ResponseWriter, r *http.Request) {
