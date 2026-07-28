@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/bhagyajitjagdev/ward/backend/internal/certs"
@@ -79,6 +80,27 @@ func serviceHostnames(s model.Service) []string {
 		return []string{s.PublicHostname}
 	}
 	return nil
+}
+
+// specificFirst returns services ordered so that any with a wildcard hostname
+// (e.g. *.example.com) sort after those with only exact hostnames — so a wildcard
+// route can't shadow a specific one. Stable: order within each group is preserved.
+func specificFirst(in []model.Service) []model.Service {
+	out := append([]model.Service(nil), in...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return !hasWildcardHost(out[i]) && hasWildcardHost(out[j])
+	})
+	return out
+}
+
+// hasWildcardHost reports whether any of the service's hostnames is a wildcard.
+func hasWildcardHost(s model.Service) bool {
+	for _, h := range serviceHostnames(s) {
+		if strings.Contains(h, "*") {
+			return true
+		}
+	}
+	return false
 }
 
 // certForHost returns the uploaded cert whose SAN covers host (wildcard-aware), or
@@ -204,10 +226,15 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		// pass-through middleware: caps every IP edge-wide, then continues to the service routes
 		routes = append(routes, map[string]any{"handle": []any{rateLimitHandler(globalRLs)}})
 	}
+	// Emit specific-host services before wildcard-host ones. Caddy evaluates a server's
+	// routes in order (first match wins) and the input is created_at order, so without
+	// this a wildcard host (*.example.com) created after a specific one (api.example.com)
+	// would shadow it nondeterministically. Both still coexist — the specific just wins.
+	services = specificFirst(services)
 	var redirectRoutes, svcRoutes []any
 	for _, s := range services {
-		if !s.Enabled || len(s.Upstreams) == 0 {
-			continue
+		if !s.Enabled || (len(s.Upstreams) == 0 && strings.TrimSpace(s.Redirect.To) == "") {
+			continue // needs upstreams to proxy, or a redirect target
 		}
 		// Before-CRS SecLang snippets for this service: generated exclusions first,
 		// then user-authored custom rules.
@@ -569,6 +596,14 @@ func GenerateExclusionSecLang(seclangID, ruleID int, pathMatch, path string, met
 // serviceRoute builds one host-matched route: [ip rules] → [geo rules] → [raw
 // Caddyfile routes] → [rate_limit?] → [waf?] → [http controls] → reverse_proxy.
 func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []model.BlockedIP, rateLimits []model.RateLimit, geoRules []model.GeoRule, rawRoutes []json.RawMessage) map[string]any {
+	// A redirect-only service: emit the redirect, skip the whole proxy/WAF chain (TLS
+	// for the hostname is still handled by the caller).
+	if strings.TrimSpace(s.Redirect.To) != "" {
+		return map[string]any{
+			"match":  []any{map[string]any{"host": serviceHostnames(s)}},
+			"handle": []any{redirectHandler(s.Redirect)},
+		}
+	}
 	innerRoutes := make([]any, 0, 4+len(rawRoutes))
 	for _, r := range ipRoutes(blocks) {
 		innerRoutes = append(innerRoutes, r)
@@ -742,18 +777,56 @@ func reverseProxyHandler(s model.Service) map[string]any {
 			"selection_policy": map[string]any{"policy": s.LBPolicy},
 		}
 	}
-	if len(ups) > 1 {
-		// Passive health checks: pull a replica out of rotation after repeated
-		// failures so load-balanced traffic skips a dead/erroring upstream.
-		h["health_checks"] = map[string]any{
-			"passive": map[string]any{
-				"fail_duration":    "30s",
-				"max_fails":        3,
-				"unhealthy_status": []any{500, 502, 503, 504},
-			},
-		}
+	// Passive health checks (always): pull an upstream out of rotation after repeated
+	// failures — now for single-upstream services too, so a dead sole backend fails fast.
+	hc := map[string]any{
+		"passive": map[string]any{
+			"fail_duration":    "30s",
+			"max_fails":        3,
+			"unhealthy_status": []any{500, 502, 503, 504},
+		},
 	}
+	// Active health checks (opt-in): a periodic probe proactively marks upstreams
+	// up/down instead of waiting for real traffic to fail.
+	if a := s.HealthCheck; a.Active {
+		active := map[string]any{
+			"uri":      orStr(a.Path, "/"),
+			"interval": orStr(a.Interval, "10s"),
+			"timeout":  orStr(a.Timeout, "5s"),
+		}
+		if a.ExpectStatus > 0 {
+			active["expect_status"] = a.ExpectStatus
+		}
+		hc["active"] = active
+	}
+	h["health_checks"] = hc
 	return h
+}
+
+// redirectHandler emits a static 301/302 for a redirect-only service. With PreservePath
+// the original request URI (path + query) is appended to the target.
+func redirectHandler(r model.Redirect) map[string]any {
+	status := r.Status
+	if status == 0 {
+		status = 302
+	}
+	loc := strings.TrimSpace(r.To)
+	if r.PreservePath {
+		loc += "{http.request.uri}"
+	}
+	return map[string]any{
+		"handler":     "static_response",
+		"status_code": status,
+		"headers":     map[string]any{"Location": []string{loc}},
+	}
+}
+
+// orStr returns v trimmed, or def when v is blank.
+func orStr(v, def string) string {
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+	return v
 }
 
 func wafHandler(opt Options, mode string, exclusions []string) map[string]any {

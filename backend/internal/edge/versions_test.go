@@ -7,14 +7,11 @@ import (
 )
 
 // TestVersionsMatchDockerfile guards against the embedded edge versions drifting from
-// what caddy/Dockerfile actually pins and labels — a bump must touch both (Renovate
-// updates both in one PR). Runs from the package dir, so the repo root is three up.
+// the pins in caddy/Dockerfile (the edge image) AND backend/Dockerfile (which builds
+// the same plugin-enabled Caddy as the adapt binary). A bump must touch all three;
+// Renovate's custom manager tracks both --with sets. Runs from the package dir, so the
+// repo root is three up.
 func TestVersionsMatchDockerfile(t *testing.T) {
-	b, err := os.ReadFile("../../../caddy/Dockerfile")
-	if err != nil {
-		t.Fatalf("read Dockerfile: %v", err)
-	}
-	df := string(b)
 	v := Versions()
 
 	// component key -> the Go module path pinned via `--with …@version`.
@@ -26,28 +23,39 @@ func TestVersionsMatchDockerfile(t *testing.T) {
 		"maxmind_geolocation": "github.com/porech/caddy-maxmind-geolocation",
 		"crowdsec_bouncer":    "github.com/hslatman/caddy-crowdsec-bouncer/http",
 	}
-	for key, mod := range modules {
-		ver := v[key]
-		if ver == "" {
-			t.Errorf("versions.json missing %q", key)
-			continue
+
+	// Both Dockerfiles pin the same modules + the same Caddy base.
+	for _, path := range []string{"../../../caddy/Dockerfile", "../../../backend/Dockerfile"} {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
 		}
-		if !strings.Contains(df, mod+"@"+ver) {
-			t.Errorf("Dockerfile does not pin %s@%s (versions.json %s=%s)", mod, ver, key, ver)
+		df := string(b)
+		for key, mod := range modules {
+			ver := v[key]
+			if ver == "" {
+				t.Errorf("versions.json missing %q", key)
+				continue
+			}
+			if !strings.Contains(df, mod+"@"+ver) {
+				t.Errorf("%s does not pin %s@%s (versions.json %s=%s)", path, mod, ver, key, ver)
+			}
+		}
+		if cv := v["caddy"]; cv == "" {
+			t.Error("versions.json missing caddy")
+		} else if want := "caddy:" + strings.TrimPrefix(cv, "v"); !strings.Contains(df, want) {
+			t.Errorf("%s does not use base image %s", path, want)
 		}
 	}
 
-	// Caddy is pinned by the base-image tag, not a --with line.
-	if cv := v["caddy"]; cv == "" {
-		t.Error("versions.json missing caddy")
-	} else if want := "FROM caddy:" + strings.TrimPrefix(cv, "v"); !strings.Contains(df, want) {
-		t.Errorf("Dockerfile base image is not %q (versions.json caddy=%s)", want, cv)
+	// The io.ward.* labels live only on the edge image.
+	edge, err := os.ReadFile("../../../caddy/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	// Every component must also carry a matching io.ward.* label.
 	for key, ver := range v {
-		if label := "io.ward." + key + `="` + ver + `"`; !strings.Contains(df, label) {
-			t.Errorf("Dockerfile missing/mismatched label %s", label)
+		if label := "io.ward." + key + `="` + ver + `"`; !strings.Contains(string(edge), label) {
+			t.Errorf("caddy/Dockerfile missing/mismatched label %s", label)
 		}
 	}
 }

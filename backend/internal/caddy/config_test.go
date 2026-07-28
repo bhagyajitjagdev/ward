@@ -247,6 +247,29 @@ func TestWAFPathGlobs(t *testing.T) {
 	}
 }
 
+func TestGenerateSpecificBeforeWildcard(t *testing.T) {
+	// Wildcard service passed FIRST (as if it were newer in created_at DESC) — the
+	// specific host must still emit before it so it isn't shadowed (Caddy first-match).
+	services := []model.Service{
+		{ID: "w", Name: "wild", PublicHostname: "*.example.com",
+			PublicHostnames: []string{"*.example.com"}, Upstreams: []string{"w:80"}, TLSMode: "none", Enabled: true},
+		{ID: "s", Name: "spec", PublicHostname: "api.example.com",
+			PublicHostnames: []string{"api.example.com"}, Upstreams: []string{"s:80"}, TLSMode: "none", Enabled: true},
+	}
+	out, err := Generate(Input{Services: services}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	spec, wild := strings.Index(s, `"api.example.com"`), strings.Index(s, `"*.example.com"`)
+	if spec < 0 || wild < 0 {
+		t.Fatalf("hosts missing (spec=%d wild=%d)", spec, wild)
+	}
+	if spec > wild {
+		t.Errorf("specific host must route before wildcard (specific idx %d, wildcard idx %d)", spec, wild)
+	}
+}
+
 func TestGenerateMultiHostname(t *testing.T) {
 	services := []model.Service{
 		{ID: "s1", Name: "api", PublicHostname: "api.example.com",

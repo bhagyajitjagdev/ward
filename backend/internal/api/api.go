@@ -323,14 +323,52 @@ func normalizeSkipPaths(in *model.Service) {
 	in.WAFSkipPaths = out
 }
 
+// validateHealthCheck checks an opt-in active health check's durations + status. Blank
+// interval/timeout are fine (config-gen fills defaults); only Active matters here.
+func validateHealthCheck(hc model.HealthCheck) (int, string) {
+	if !hc.Active {
+		return 0, ""
+	}
+	for name, v := range map[string]string{"interval": hc.Interval, "timeout": hc.Timeout} {
+		if v == "" {
+			continue
+		}
+		if _, err := time.ParseDuration(v); err != nil {
+			return http.StatusBadRequest, "health_check " + name + " must be a duration like \"10s\""
+		}
+	}
+	if hc.ExpectStatus != 0 && (hc.ExpectStatus < 100 || hc.ExpectStatus > 599) {
+		return http.StatusBadRequest, "health_check expect_status must be a valid HTTP status (100–599)"
+	}
+	return 0, ""
+}
+
+// validateRedirect checks a redirect-only service's target + status.
+func validateRedirect(r model.Redirect) (int, string) {
+	if strings.TrimSpace(r.To) == "" {
+		return 0, ""
+	}
+	if !strings.HasPrefix(r.To, "http://") && !strings.HasPrefix(r.To, "https://") {
+		return http.StatusBadRequest, "redirect target must be an absolute URL (http:// or https://)"
+	}
+	if r.Status != 0 && (r.Status < 300 || r.Status > 308) {
+		return http.StatusBadRequest, "redirect status must be a 3xx code (e.g. 301 or 302)"
+	}
+	return 0, ""
+}
+
 func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 	var in model.Service
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if in.Name == "" || len(in.Upstreams) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and at least one upstream are required"})
+	if in.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		return
+	}
+	if len(in.Upstreams) == 0 && strings.TrimSpace(in.Redirect.To) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a service needs at least one upstream, or a redirect target"})
 		return
 	}
 	if !validWAFMode(in.WAFMode) {
@@ -342,6 +380,14 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	normalizeSkipPaths(&in)
+	if code, msg := validateHealthCheck(in.HealthCheck); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
+		return
+	}
+	if code, msg := validateRedirect(in.Redirect); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
+		return
+	}
 	if code, msg := h.checkServiceHostnames(r.Context(), &in, ""); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
@@ -394,8 +440,12 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if in.Name == "" || len(in.Upstreams) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and at least one upstream are required"})
+	if in.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		return
+	}
+	if len(in.Upstreams) == 0 && strings.TrimSpace(in.Redirect.To) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a service needs at least one upstream, or a redirect target"})
 		return
 	}
 	if !validWAFMode(in.WAFMode) {
@@ -407,6 +457,14 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	normalizeSkipPaths(&in)
+	if code, msg := validateHealthCheck(in.HealthCheck); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
+		return
+	}
+	if code, msg := validateRedirect(in.Redirect); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
+		return
+	}
 	if code, msg := h.checkServiceHostnames(r.Context(), &in, r.PathValue("id")); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return

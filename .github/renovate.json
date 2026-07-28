@@ -5,8 +5,8 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Pinned xcaddy modules in caddy/Dockerfile (Dependabot can't see the --with lines)",
-      "fileMatch": ["^caddy/Dockerfile$"],
+      "description": "Pinned xcaddy modules in caddy/Dockerfile + backend/Dockerfile (Dependabot can't see the --with lines)",
+      "fileMatch": ["^caddy/Dockerfile$", "^backend/Dockerfile$"],
       "matchStrings": ["--with\\s+(?<depName>github\\.com/[^@\\s]+)@(?<currentValue>v[0-9][^\\s\\\\]*)"],
       "datasourceTemplate": "go"
     }
@@ -15,7 +15,7 @@
     {
       "description": "One PR for the whole compiled-in edge stack. A human syncs backend/internal/edge/versions.json + the io.ward.* labels to match — the e2e + edge unit tests fail the PR until they do.",
       "matchManagers": ["custom.regex"],
-      "matchFileNames": ["caddy/Dockerfile"],
+      "matchFileNames": ["caddy/Dockerfile", "backend/Dockerfile"],
       "groupName": "edge stack"
     }
   ]

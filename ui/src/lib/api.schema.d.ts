@@ -757,6 +757,8 @@ export interface components {
             /** @description Request paths (matched as prefix + subpaths) for which the WAF is bypassed so streaming (SSE) works. WebSocket upgrades bypass automatically regardless. Other protections still apply. */
             waf_skip_paths?: string[];
             http?: components["schemas"]["HTTPConfig"];
+            health_check?: components["schemas"]["HealthCheck"];
+            redirect?: components["schemas"]["Redirect"];
             /** @description Advanced: a raw Caddyfile fragment spliced into the route. */
             raw_caddy?: string;
             enabled: boolean;
@@ -785,13 +787,35 @@ export interface components {
             strip_path_prefix?: string;
             compression?: boolean;
         };
+        /** @description Active upstream health checking (opt-in). Passive checks are always on. */
+        HealthCheck: {
+            /** @description Enable active probing. */
+            active?: boolean;
+            /** @description Probe URI (default "/"). */
+            path?: string;
+            /** @description Go duration between probes, e.g. "10s". */
+            interval?: string;
+            /** @description Go duration probe timeout, e.g. "5s". */
+            timeout?: string;
+            /** @description Healthy status code; 0 → Caddy default (2xx). */
+            expect_status?: number;
+        };
+        /** @description When `to` is set, the service redirects (301/302) instead of proxying — no upstreams needed. */
+        Redirect: {
+            /** @description Target URL, e.g. https://new.example.com. */
+            to?: string;
+            /** @description 301 or 302; 0 → 302. */
+            status?: number;
+            /** @description Append the original path + query to the target. */
+            preserve_path?: boolean;
+        };
         ServiceInput: {
             name: string;
             /** @description Optional single-hostname shorthand; public_hostnames wins if both are sent. */
             public_hostname?: string;
             /** @description One or more hostnames; the first is the primary. */
             public_hostnames: string[];
-            upstreams: string[];
+            upstreams?: string[];
             lb_policy?: string;
             tls_mode?: string;
             waf_enabled?: boolean;
@@ -799,6 +823,8 @@ export interface components {
             /** @description Request paths (prefix + subpaths) that bypass the WAF so streaming (SSE) works; WebSocket upgrades bypass automatically. */
             waf_skip_paths?: string[];
             http?: components["schemas"]["HTTPConfig"];
+            health_check?: components["schemas"]["HealthCheck"];
+            redirect?: components["schemas"]["Redirect"];
             raw_caddy?: string;
         };
         ServiceUpdate: components["schemas"]["ServiceInput"] & {

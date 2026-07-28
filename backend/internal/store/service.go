@@ -45,6 +45,8 @@ type serviceRow struct {
 	WAFEnabled     bool      `bun:"waf_enabled,notnull"`
 	WAFMode        string    `bun:"waf_mode,notnull"`
 	WAFSkipPaths   string    `bun:"waf_skip_paths,notnull"` // JSON array of paths that bypass the WAF
+	HealthCheck    string    `bun:"health_check,notnull"`   // JSON model.HealthCheck
+	Redirect       string    `bun:"redirect,notnull"`       // JSON model.Redirect
 	Enabled        bool      `bun:"enabled,notnull"`
 	CreatedAt      time.Time `bun:"created_at,notnull"`
 	UpdatedAt      time.Time `bun:"updated_at,notnull"`
@@ -76,6 +78,18 @@ func (r serviceRow) toModel() (model.Service, error) {
 			return model.Service{}, err
 		}
 	}
+	hc := model.HealthCheck{}
+	if r.HealthCheck != "" {
+		if err := json.Unmarshal([]byte(r.HealthCheck), &hc); err != nil {
+			return model.Service{}, err
+		}
+	}
+	rd := model.Redirect{}
+	if r.Redirect != "" {
+		if err := json.Unmarshal([]byte(r.Redirect), &rd); err != nil {
+			return model.Service{}, err
+		}
+	}
 	return model.Service{
 		ID:              r.ID,
 		Name:            r.Name,
@@ -89,6 +103,8 @@ func (r serviceRow) toModel() (model.Service, error) {
 		WAFEnabled:      r.WAFEnabled,
 		WAFMode:         r.WAFMode,
 		WAFSkipPaths:    skip,
+		HealthCheck:     hc,
+		Redirect:        rd,
 		Enabled:         r.Enabled,
 		CreatedAt:       r.CreatedAt,
 		UpdatedAt:       r.UpdatedAt,
@@ -180,6 +196,14 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 	if err != nil {
 		return model.Service{}, err
 	}
+	hc, err := json.Marshal(in.HealthCheck)
+	if err != nil {
+		return model.Service{}, err
+	}
+	rd, err := json.Marshal(in.Redirect)
+	if err != nil {
+		return model.Service{}, err
+	}
 	now := time.Now().UTC()
 	row := serviceRow{
 		ID:             id.String(),
@@ -194,6 +218,8 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 		WAFEnabled:     in.WAFEnabled,
 		WAFMode:        in.WAFMode,
 		WAFSkipPaths:   string(skip),
+		HealthCheck:    string(hc),
+		Redirect:       string(rd),
 		Enabled:        true,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -256,6 +282,14 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 	if err != nil {
 		return model.Service{}, err
 	}
+	hc, err := json.Marshal(in.HealthCheck)
+	if err != nil {
+		return model.Service{}, err
+	}
+	rd, err := json.Marshal(in.Redirect)
+	if err != nil {
+		return model.Service{}, err
+	}
 	row := serviceRow{
 		ID:             id,
 		Name:           in.Name,
@@ -269,11 +303,13 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 		WAFEnabled:     in.WAFEnabled,
 		WAFMode:        in.WAFMode,
 		WAFSkipPaths:   string(skip),
+		HealthCheck:    string(hc),
+		Redirect:       string(rd),
 		Enabled:        in.Enabled,
 		UpdatedAt:      time.Now().UTC(),
 	}
 	res, err := s.DB.NewUpdate().Model(&row).
-		Column("name", "public_hostname", "extra_hostnames", "http_config", "raw_caddy", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "waf_skip_paths", "enabled", "updated_at").
+		Column("name", "public_hostname", "extra_hostnames", "http_config", "raw_caddy", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "waf_skip_paths", "health_check", "redirect", "enabled", "updated_at").
 		WherePK().Exec(ctx)
 	if err != nil {
 		if isUniqueViolation(err) {

@@ -907,6 +907,8 @@ components:
           items: { type: string }
           description: Request paths (matched as prefix + subpaths) for which the WAF is bypassed so streaming (SSE) works. WebSocket upgrades bypass automatically regardless. Other protections still apply.
         http: { $ref: "#/components/schemas/HTTPConfig" }
+        health_check: { $ref: "#/components/schemas/HealthCheck" }
+        redirect: { $ref: "#/components/schemas/Redirect" }
         raw_caddy: { type: string, description: "Advanced: a raw Caddyfile fragment spliced into the route." }
         enabled: { type: boolean }
         created_at: { type: string, format: date-time }
@@ -934,9 +936,27 @@ components:
         strip_path_prefix: { type: string }
         compression: { type: boolean }
 
+    HealthCheck:
+      type: object
+      description: Active upstream health checking (opt-in). Passive checks are always on.
+      properties:
+        active: { type: boolean, description: Enable active probing. }
+        path: { type: string, description: 'Probe URI (default "/").' }
+        interval: { type: string, description: 'Go duration between probes, e.g. "10s".' }
+        timeout: { type: string, description: 'Go duration probe timeout, e.g. "5s".' }
+        expect_status: { type: integer, description: 'Healthy status code; 0 → Caddy default (2xx).' }
+
+    Redirect:
+      type: object
+      description: When `to` is set, the service redirects (301/302) instead of proxying — no upstreams needed.
+      properties:
+        to: { type: string, description: 'Target URL, e.g. https://new.example.com.' }
+        status: { type: integer, description: '301 or 302; 0 → 302.' }
+        preserve_path: { type: boolean, description: 'Append the original path + query to the target.' }
+
     ServiceInput:
       type: object
-      required: [name, public_hostnames, upstreams]
+      required: [name, public_hostnames] # upstreams OR a redirect target (checked in the API)
       properties:
         name: { type: string }
         public_hostname: { type: string, description: "Optional single-hostname shorthand; public_hostnames wins if both are sent." }
@@ -956,6 +976,8 @@ components:
           items: { type: string }
           description: Request paths (prefix + subpaths) that bypass the WAF so streaming (SSE) works; WebSocket upgrades bypass automatically.
         http: { $ref: "#/components/schemas/HTTPConfig" }
+        health_check: { $ref: "#/components/schemas/HealthCheck" }
+        redirect: { $ref: "#/components/schemas/Redirect" }
         raw_caddy: { type: string }
 
     ServiceUpdate:

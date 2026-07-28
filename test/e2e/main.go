@@ -24,12 +24,13 @@ import (
 )
 
 var (
-	wardAPI  = env("WARD_API", "http://ward:8080/api")
-	edgeURL  = env("EDGE", "http://caddy:80")
-	upstream = env("UPSTREAM", "appserver:8080")
-	token    string
-	failures int
-	httpc    = &http.Client{Timeout: 20 * time.Second}
+	wardAPI   = env("WARD_API", "http://ward:8080/api")
+	edgeURL   = env("EDGE", "http://caddy:80")
+	upstream  = env("UPSTREAM", "appserver:8080")
+	upstream2 = env("UPSTREAM2", "whoami:80")
+	token     string
+	failures  int
+	httpc     = &http.Client{Timeout: 20 * time.Second}
 )
 
 func main() {
@@ -38,6 +39,8 @@ func main() {
 
 	check("proxy", checkProxy)
 	check("multi-hostname", checkMultiHostname)
+	check("wildcard-ordering", checkWildcardOrdering)
+	check("active-health-check", checkActiveHealthCheck)
 	check("waf-enforce", checkWAFEnforce)
 	check("waf-detect+crs-id", checkWAFDetectAndCRSID)
 	check("waf-exclusion", checkExclusion)
@@ -52,6 +55,8 @@ func main() {
 	check("http-basic-auth", checkBasicAuth)
 	check("http-compression", checkCompression)
 	check("raw-caddyfile", checkRawCaddy)
+	check("raw-caddy-plugin", checkRawCaddyPlugin)
+	check("redirect", checkRedirect)
 	check("edge-versions", checkEdgeVersions)
 	check("snapshots", checkSnapshots)
 
@@ -95,6 +100,54 @@ func checkMultiHostname() error {
 		}
 	}
 	return nil
+}
+
+func checkWildcardOrdering() error {
+	// Create the specific host first, then a wildcard (so the wildcard is *newer* — the
+	// shadowing scenario). The specific must still win for its exact host, and the
+	// wildcard catches everything else.
+	_, specDone, err := mkService(hostSpec("api.wild.test", upstream)) // → appserver
+	if err != nil {
+		return err
+	}
+	defer specDone()
+	_, wildDone, err := mkService(hostSpec("*.wild.test", upstream2)) // → whoami (newer)
+	if err != nil {
+		return err
+	}
+	defer wildDone()
+	time.Sleep(400 * time.Millisecond)
+	if _, body := edge("GET", "api.wild.test", "/", nil, ""); !strings.Contains(body, "wardtest-upstream") {
+		return fmt.Errorf("specific host should reach its own upstream, not the newer wildcard; got %q", trim(body))
+	}
+	if _, body := edge("GET", "other.wild.test", "/", nil, ""); strings.Contains(body, "wardtest-upstream") {
+		return fmt.Errorf("a non-specific host should be caught by the wildcard upstream")
+	}
+	return nil
+}
+
+func checkActiveHealthCheck() error {
+	// Two upstreams — one live, one dead (a refused port). With active checks the dead
+	// one is probed, marked unhealthy, and shed; without them round-robin would 502 on
+	// it ~half the time.
+	spec := svcSpec("health.test", false, "")
+	spec["upstreams"] = []string{upstream, "127.0.0.1:9"}
+	spec["health_check"] = map[string]any{"active": true, "path": "/", "interval": "1s", "timeout": "1s"}
+	_, done, err := mkService(spec)
+	if err != nil {
+		return err
+	}
+	defer done()
+	// Give active checks a few cycles to shed the dead upstream, then all requests must
+	// succeed (6 in a row → the dead one is definitely out of rotation).
+	return retry(15, 400*time.Millisecond, func() error {
+		for i := 0; i < 6; i++ {
+			if st, _ := edge("GET", "health.test", "/", nil, ""); st != 200 {
+				return fmt.Errorf("dead upstream not yet shed (got %d)", st)
+			}
+		}
+		return nil
+	})
 }
 
 func checkWAFEnforce() error {
@@ -410,6 +463,51 @@ func checkRawCaddy() error {
 	return nil
 }
 
+func checkRawCaddyPlugin() error {
+	// #1 payoff: raw_caddy adapts against the plugin-enabled binary now, so a plugin
+	// directive (rate_limit) in a fragment is accepted at save — it used to be rejected
+	// because the control-plane bundled a plain Caddy for adaptation.
+	spec := svcSpec("rawplugin.test", false, "")
+	spec["raw_caddy"] = "route {\n\trate_limit {\n\t\tzone e2e {\n\t\t\tkey {remote_host}\n\t\t\tevents 1000\n\t\t\twindow 1m\n\t\t}\n\t}\n}"
+	_, done, err := mkService(spec)
+	if err != nil {
+		return fmt.Errorf("a plugin directive in raw_caddy should now be accepted: %w", err)
+	}
+	defer done()
+	return retry(10, 300*time.Millisecond, func() error {
+		if st, _ := edge("GET", "rawplugin.test", "/", nil, ""); st != 200 {
+			return fmt.Errorf("service with a plugin raw_caddy directive should serve, got %d", st)
+		}
+		return nil
+	})
+}
+
+func checkRedirect() error {
+	// A redirect-only service — no upstreams, just a 302 with the path preserved.
+	_, done, err := mkService(map[string]any{
+		"name": "redir.test", "public_hostnames": []string{"redir.test"},
+		"tls_mode": "none", "waf_enabled": false, "enabled": true,
+		"redirect": map[string]any{"to": "https://new.example.com", "status": 302, "preserve_path": true},
+	})
+	if err != nil {
+		return fmt.Errorf("create redirect service: %w", err)
+	}
+	defer done()
+	return retry(10, 300*time.Millisecond, func() error {
+		resp, _, err := edgeResp("GET", "redir.test", "/foo?x=1", nil)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != 302 {
+			return fmt.Errorf("expected 302, got %d", resp.StatusCode)
+		}
+		if loc := resp.Header.Get("Location"); loc != "https://new.example.com/foo?x=1" {
+			return fmt.Errorf("Location = %q, want path preserved", loc)
+		}
+		return nil
+	})
+}
+
 func checkEdgeVersions() error {
 	_, b := api("GET", "/settings", nil)
 	var s struct {
@@ -450,6 +548,14 @@ func svcSpec(host string, waf bool, mode string) map[string]any {
 		"waf_mode":         mode,
 		"enabled":          true,
 	}
+}
+
+// hostSpec is a WAF-off service on `host` pointing at a specific upstream — used to
+// tell two services apart by which backend answers.
+func hostSpec(host, up string) map[string]any {
+	s := svcSpec(host, false, "")
+	s["upstreams"] = []string{up}
+	return s
 }
 
 // mkService creates a service and returns its id + a cleanup func.

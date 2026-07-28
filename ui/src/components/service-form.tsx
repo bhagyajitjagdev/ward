@@ -19,8 +19,29 @@ export type ServiceFormState = {
   wafMode: "" | WafMode
   wafSkipPaths: string[]
   http: HTTPConfig
+  healthCheck: HealthCheckForm
+  redirect: RedirectForm
   rawCaddy: string
   enabled: boolean
+}
+
+// HealthCheckForm mirrors the API's HealthCheck but keeps expect_status as a string for
+// the input (parsed on submit).
+export type HealthCheckForm = {
+  active: boolean
+  path: string
+  interval: string
+  timeout: string
+  expectStatus: string
+}
+
+// RedirectForm mirrors the API's Redirect; `enabled` drives the proxy/redirect toggle
+// (the service is a redirect when enabled + a target is set), status kept as a string.
+export type RedirectForm = {
+  enabled: boolean
+  to: string
+  status: string
+  preservePath: boolean
 }
 
 export function emptyServiceForm(): ServiceFormState {
@@ -34,6 +55,8 @@ export function emptyServiceForm(): ServiceFormState {
     wafMode: "",
     wafSkipPaths: [],
     http: {},
+    healthCheck: { active: false, path: "", interval: "", timeout: "", expectStatus: "" },
+    redirect: { enabled: false, to: "", status: "302", preservePath: true },
     rawCaddy: "",
     enabled: true,
   }
@@ -50,6 +73,19 @@ export function serviceToForm(s: Service): ServiceFormState {
     wafMode: s.waf_mode,
     wafSkipPaths: s.waf_skip_paths ?? [],
     http: s.http ?? {},
+    healthCheck: {
+      active: !!s.health_check?.active,
+      path: s.health_check?.path ?? "",
+      interval: s.health_check?.interval ?? "",
+      timeout: s.health_check?.timeout ?? "",
+      expectStatus: s.health_check?.expect_status ? String(s.health_check.expect_status) : "",
+    },
+    redirect: {
+      enabled: !!s.redirect?.to,
+      to: s.redirect?.to ?? "",
+      status: s.redirect?.status ? String(s.redirect.status) : "302",
+      preservePath: s.redirect?.preserve_path ?? true,
+    },
     rawCaddy: s.raw_caddy ?? "",
     enabled: s.enabled,
   }
@@ -66,13 +102,24 @@ export function formToInput(f: ServiceFormState): ServiceUpdate {
     waf_mode: f.wafEnabled ? f.wafMode : "",
     waf_skip_paths: f.wafEnabled ? f.wafSkipPaths : [],
     http: f.http,
+    health_check: {
+      active: f.healthCheck.active,
+      path: f.healthCheck.path.trim(),
+      interval: f.healthCheck.interval.trim(),
+      timeout: f.healthCheck.timeout.trim(),
+      expect_status: f.healthCheck.expectStatus.trim() ? Number(f.healthCheck.expectStatus) : 0,
+    },
+    redirect: f.redirect.enabled
+      ? { to: f.redirect.to.trim(), status: Number(f.redirect.status) || 302, preserve_path: f.redirect.preservePath }
+      : {},
     raw_caddy: f.rawCaddy.trim() || undefined,
     enabled: f.enabled,
   }
 }
 
 export function serviceFormValid(f: ServiceFormState): boolean {
-  return f.name.trim().length > 0 && f.hostnames.length > 0 && f.upstreams.length > 0
+  const backend = f.redirect.enabled ? f.redirect.to.trim().length > 0 : f.upstreams.length > 0
+  return f.name.trim().length > 0 && f.hostnames.length > 0 && backend
 }
 
 // ── Layout primitives ─────────────────────────────────────────────────────────
@@ -194,6 +241,8 @@ export function ServiceFormFields({
   const set = (patch: Partial<ServiceFormState>) => onChange({ ...form, ...patch })
   const h = form.http ?? {}
   const setHttp = (patch: Partial<HTTPConfig>) => set({ http: { ...h, ...patch } })
+  const setHC = (patch: Partial<HealthCheckForm>) => set({ healthCheck: { ...form.healthCheck, ...patch } })
+  const setRedir = (patch: Partial<RedirectForm>) => set({ redirect: { ...form.redirect, ...patch } })
 
   return (
     <div className="grid gap-y-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -215,6 +264,54 @@ export function ServiceFormFields({
         </Section>
 
         <Section title="Backend">
+          <label className="flex items-center gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={form.redirect.enabled}
+              onChange={(e) => setRedir({ enabled: e.target.checked })}
+            />
+            Redirect instead of proxying
+          </label>
+
+          {form.redirect.enabled ? (
+            <>
+              <Field label="Redirect to" htmlFor="svc-redir-to">
+                <Input
+                  id="svc-redir-to"
+                  className="font-mono"
+                  placeholder="https://new.example.com"
+                  value={form.redirect.to}
+                  onChange={(e) => setRedir({ to: e.target.value })}
+                />
+              </Field>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Status" htmlFor="svc-redir-status">
+                  <Select value={form.redirect.status} onValueChange={(status) => setRedir({ status })}>
+                    <SelectTrigger id="svc-redir-status" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="302">302 · temporary</SelectItem>
+                      <SelectItem value="301">301 · permanent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Path">
+                  <label className="flex h-9 items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={form.redirect.preservePath}
+                      onChange={(e) => setRedir({ preservePath: e.target.checked })}
+                    />
+                    Preserve path + query
+                  </label>
+                </Field>
+              </div>
+            </>
+          ) : (
+            <>
           <Field label="Upstreams" hint="— host:port, Enter to add each">
             <TokenInput
               ariaLabel="Upstreams"
@@ -238,6 +335,42 @@ export function ServiceFormFields({
               </SelectContent>
             </Select>
           </Field>
+          <Field label="Health check">
+            <label className="flex h-9 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={form.healthCheck.active}
+                onChange={(e) => setHC({ active: e.target.checked })}
+              />
+              Actively probe upstreams
+            </label>
+            {form.healthCheck.active && (
+              <div className="mt-1.5 grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <SubLabel>Path</SubLabel>
+                  <Input className="h-9 font-mono" placeholder="/health" value={form.healthCheck.path} onChange={(e) => setHC({ path: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <SubLabel>Expect status</SubLabel>
+                  <Input className="h-9 font-mono" placeholder="200" value={form.healthCheck.expectStatus} onChange={(e) => setHC({ expectStatus: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <SubLabel>Interval</SubLabel>
+                  <Input className="h-9 font-mono" placeholder="10s" value={form.healthCheck.interval} onChange={(e) => setHC({ interval: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <SubLabel>Timeout</SubLabel>
+                  <Input className="h-9 font-mono" placeholder="5s" value={form.healthCheck.timeout} onChange={(e) => setHC({ timeout: e.target.value })} />
+                </div>
+              </div>
+            )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Passive checks (shedding a failing upstream) are always on. Active adds a periodic probe.
+            </p>
+          </Field>
+            </>
+          )}
         </Section>
 
         <Section title="TLS & protection">
