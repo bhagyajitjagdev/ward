@@ -198,6 +198,7 @@ export const api = {
   // settings
   getSettings: () => client.GET("/settings").then(unwrap),
   updateSettings: (input: Partial<Settings>) => client.PATCH("/settings", { body: input }).then(unwrap),
+  exportConfig: () => client.GET("/config/export").then(unwrap),
 
   // crowdsec (read-only status + active decisions)
   crowdsecStatus: () => client.GET("/crowdsec").then(unwrap),

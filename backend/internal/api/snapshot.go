@@ -16,6 +16,21 @@ func (h *Handler) listSnapshots(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, snaps)
 }
 
+// getSnapshot returns one snapshot including its stored Caddy JSON (omitted from the
+// list) — so a snapshot can be fetched and diffed remotely.
+func (h *Handler) getSnapshot(w http.ResponseWriter, r *http.Request) {
+	snap, err := h.store.GetSnapshot(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	if snap == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "snapshot not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, snap)
+}
+
 func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 	if h.applier == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "no edge configured"})

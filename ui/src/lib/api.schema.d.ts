@@ -614,6 +614,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config-snapshots/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One snapshot including its stored Caddy JSON (for remote diffing) */
+        get: operations["getSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ward's declarative config as portable JSON (backup / git-review / diff) */
+        get: operations["exportConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config-snapshots/{id}/rollback": {
         parameters: {
             query?: never;
@@ -2311,6 +2345,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigSnapshot"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigSnapshot"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    exportConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             default: components["responses"]["Error"];

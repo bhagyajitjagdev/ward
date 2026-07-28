@@ -59,6 +59,7 @@ func main() {
 	check("redirect", checkRedirect)
 	check("edge-versions", checkEdgeVersions)
 	check("snapshots", checkSnapshots)
+	check("snapshot-export", checkSnapshotAndExport)
 
 	if failures > 0 {
 		fmt.Printf("\n%d check(s) FAILED\n", failures)
@@ -516,6 +517,38 @@ func checkEdgeVersions() error {
 	_ = json.Unmarshal(b, &s)
 	if s.EdgeVersions["caddy"] == "" {
 		return fmt.Errorf("settings.edge_versions.caddy is empty")
+	}
+	return nil
+}
+
+func checkSnapshotAndExport() error {
+	// Fetch a snapshot by id → it carries the stored Caddy JSON (omitted from the list).
+	_, b := api("GET", "/config-snapshots", nil)
+	var snaps []map[string]any
+	_ = json.Unmarshal(b, &snaps)
+	if len(snaps) == 0 {
+		return fmt.Errorf("no snapshots to fetch")
+	}
+	st, sb := api("GET", "/config-snapshots/"+fmt.Sprint(snaps[0]["id"]), nil)
+	if st != 200 {
+		return fmt.Errorf("get snapshot → %d", st)
+	}
+	var snap map[string]any
+	_ = json.Unmarshal(sb, &snap)
+	if s, _ := snap["caddy_json"].(string); s == "" {
+		return fmt.Errorf("fetched snapshot is missing caddy_json")
+	}
+	// The declarative export carries the config sections.
+	est, eb := api("GET", "/config/export", nil)
+	if est != 200 {
+		return fmt.Errorf("export → %d", est)
+	}
+	var exp map[string]any
+	_ = json.Unmarshal(eb, &exp)
+	for _, k := range []string{"services", "settings", "waf_exclusions", "blocklist", "rate_limits"} {
+		if _, ok := exp[k]; !ok {
+			return fmt.Errorf("export missing %q", k)
+		}
 	}
 	return nil
 }

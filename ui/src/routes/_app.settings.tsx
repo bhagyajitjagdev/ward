@@ -39,6 +39,8 @@ function SettingsPage() {
 
         <CrowdSecSection />
 
+        <ExportSection />
+
         <Section title="Appearance" description="Theme for this browser.">
           <Segmented
             options={[
@@ -133,6 +135,37 @@ function RulesetSection() {
 // ships. Read-only — they move together with the Ward version. Values come from the
 // image's pinned build (kept in lockstep with caddy/Dockerfile); the authoritative
 // source for a running image is `docker inspect` (its OCI labels).
+function ExportSection() {
+  const [busy, setBusy] = useState(false)
+  const download = async () => {
+    setBusy(true)
+    try {
+      const cfg = await api.exportConfig()
+      const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "ward-config.json"
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't export the config")
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Section
+      title="Configuration"
+      description="Download Ward's declarative config — services, WAF exclusions + rules, blocklist, rate-limits, geo, and settings — as JSON for backup, git review, or diffing. Secrets are excluded."
+    >
+      <Button variant="outline" onClick={download} disabled={busy}>
+        {busy ? "Exporting…" : "Export configuration"}
+      </Button>
+    </Section>
+  )
+}
+
 function EdgeSection() {
   const { data } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
   const versions = data?.edge_versions ?? {}

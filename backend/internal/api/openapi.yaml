@@ -700,6 +700,31 @@ paths:
                 items: { $ref: "#/components/schemas/ConfigSnapshot" }
         default: { $ref: "#/components/responses/Error" }
 
+  /config-snapshots/{id}:
+    get:
+      operationId: getSnapshot
+      summary: One snapshot including its stored Caddy JSON (for remote diffing)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigSnapshot" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /config/export:
+    get:
+      operationId: exportConfig
+      summary: Ward's declarative config as portable JSON (backup / git-review / diff)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, description: "Services, WAF exclusions + custom rules, blocklist, rate-limits, geo rules, and settings. Secrets are blanked." }
+        default: { $ref: "#/components/responses/Error" }
+
   /config-snapshots/{id}/rollback:
     post:
       operationId: rollback
