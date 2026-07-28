@@ -793,6 +793,8 @@ export interface components {
             http?: components["schemas"]["HTTPConfig"];
             health_check?: components["schemas"]["HealthCheck"];
             redirect?: components["schemas"]["Redirect"];
+            /** @description Route paths of this host to different backends (or deny them). The WAF runs once at host level, before the split; `upstreams` is the default when no rule matches. */
+            path_rules?: components["schemas"]["PathRule"][];
             /** @description Advanced: a raw Caddyfile fragment spliced into the route. */
             raw_caddy?: string;
             enabled: boolean;
@@ -843,6 +845,22 @@ export interface components {
             /** @description Append the original path + query to the target. */
             preserve_path?: boolean;
         };
+        /** @description Routes one path of a service to its own backend, or denies it. Applied most-specific-first (exact before prefix, longer path before shorter). */
+        PathRule: {
+            /** @description The path to match, e.g. "/api". */
+            path: string;
+            /**
+             * @description Match mode; defaults to "prefix" (the path and everything under it).
+             * @enum {string}
+             */
+            match?: "prefix" | "exact";
+            /** @description Dial targets for this path. Required unless `deny` is set. */
+            upstreams?: string[];
+            /** @description Return 403 for this path instead of proxying. */
+            deny?: boolean;
+            /** @description Strip this prefix from the request path before proxying upstream. */
+            strip_prefix?: string;
+        };
         ServiceInput: {
             name: string;
             /** @description Optional single-hostname shorthand; public_hostnames wins if both are sent. */
@@ -859,6 +877,8 @@ export interface components {
             http?: components["schemas"]["HTTPConfig"];
             health_check?: components["schemas"]["HealthCheck"];
             redirect?: components["schemas"]["Redirect"];
+            /** @description Route paths of this host to different backends (or deny them). `upstreams` is the default when no rule matches. */
+            path_rules?: components["schemas"]["PathRule"][];
             raw_caddy?: string;
         };
         ServiceUpdate: components["schemas"]["ServiceInput"] & {

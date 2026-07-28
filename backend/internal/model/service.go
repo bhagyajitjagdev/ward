@@ -24,6 +24,10 @@ type Service struct {
 	WAFSkipPaths []string    `json:"waf_skip_paths"`
 	HTTP         HTTPConfig  `json:"http"`         // structured proxy controls (headers, auth, rewrite…)
 	HealthCheck  HealthCheck `json:"health_check"` // active upstream health checking (opt-in)
+	// PathRules split one host across backends by request path: each rule proxies its
+	// path to its own upstreams (or denies it with a 403). Upstreams above stays the
+	// default (catch-all) pool. The WAF runs once at host level, before the split.
+	PathRules []PathRule `json:"path_rules"`
 	// Redirect, when To is set, makes this a redirect-only service (301/302) instead of
 	// a proxy — no upstreams needed, and the WAF/HTTP-controls chain is skipped.
 	Redirect Redirect `json:"redirect"`
@@ -39,6 +43,17 @@ type Redirect struct {
 	To           string `json:"to,omitempty"`            // target URL, e.g. https://new.example.com
 	Status       int    `json:"status,omitempty"`        // 301 or 302; 0 → 302
 	PreservePath bool   `json:"preserve_path,omitempty"` // append the original path + query
+}
+
+// PathRule routes one path of a service to its own backend (or denies it). Rules are
+// applied most-specific-first (exact before prefix, longer path before shorter); the
+// service's own Upstreams are the default when no rule matches. Stored as a JSON blob.
+type PathRule struct {
+	Path        string   `json:"path"`                   // the path to match, e.g. "/api"
+	Match       string   `json:"match,omitempty"`        // "prefix" (default) | "exact"
+	Upstreams   []string `json:"upstreams,omitempty"`    // dial targets for this path (empty ⇒ must Deny)
+	Deny        bool     `json:"deny,omitempty"`         // return 403 for this path instead of proxying
+	StripPrefix string   `json:"strip_prefix,omitempty"` // strip this prefix before proxying upstream
 }
 
 // HealthCheck holds a service's active upstream health-check config (opt-in). Passive

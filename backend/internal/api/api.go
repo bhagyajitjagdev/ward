@@ -359,6 +359,59 @@ func validateRedirect(r model.Redirect) (int, string) {
 	return 0, ""
 }
 
+// normalizePathRules trims each rule's path (leading slash), defaults the match to
+// "prefix", trims/de-blanks upstreams, and drops empty rules. Empty result → nil.
+func normalizePathRules(in *model.Service) {
+	if len(in.PathRules) == 0 {
+		return
+	}
+	out := make([]model.PathRule, 0, len(in.PathRules))
+	for _, r := range in.PathRules {
+		if r.Path = strings.TrimSpace(r.Path); r.Path == "" {
+			continue
+		}
+		if !strings.HasPrefix(r.Path, "/") {
+			r.Path = "/" + r.Path
+		}
+		if r.Match == "" {
+			r.Match = "prefix"
+		}
+		r.StripPrefix = strings.TrimSpace(r.StripPrefix)
+		ups := make([]string, 0, len(r.Upstreams))
+		for _, u := range r.Upstreams {
+			if u = strings.TrimSpace(u); u != "" {
+				ups = append(ups, u)
+			}
+		}
+		r.Upstreams = ups
+		out = append(out, r)
+	}
+	in.PathRules = out
+}
+
+// validatePathRules checks each rule: a valid match type, exactly one of upstreams/deny,
+// and no duplicate (match, path) pairs.
+func validatePathRules(rules []model.PathRule) (int, string) {
+	seen := map[string]bool{}
+	for _, r := range rules {
+		if r.Match != "prefix" && r.Match != "exact" {
+			return http.StatusBadRequest, "path rule match must be 'prefix' or 'exact'"
+		}
+		if r.Deny && len(r.Upstreams) > 0 {
+			return http.StatusBadRequest, "path rule " + r.Path + " can't both deny and proxy — set upstreams or deny, not both"
+		}
+		if !r.Deny && len(r.Upstreams) == 0 {
+			return http.StatusBadRequest, "path rule " + r.Path + " needs at least one upstream, or set deny"
+		}
+		key := r.Match + " " + r.Path
+		if seen[key] {
+			return http.StatusBadRequest, "duplicate path rule for " + r.Path
+		}
+		seen[key] = true
+	}
+	return 0, ""
+}
+
 func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 	var in model.Service
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -382,11 +435,16 @@ func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	normalizeSkipPaths(&in)
+	normalizePathRules(&in)
 	if code, msg := validateHealthCheck(in.HealthCheck); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
 	if code, msg := validateRedirect(in.Redirect); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
+		return
+	}
+	if code, msg := validatePathRules(in.PathRules); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
@@ -459,11 +517,16 @@ func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	normalizeSkipPaths(&in)
+	normalizePathRules(&in)
 	if code, msg := validateHealthCheck(in.HealthCheck); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
 	if code, msg := validateRedirect(in.Redirect); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
+		return
+	}
+	if code, msg := validatePathRules(in.PathRules); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}

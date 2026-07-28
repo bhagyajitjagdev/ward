@@ -47,6 +47,7 @@ type serviceRow struct {
 	WAFSkipPaths   string    `bun:"waf_skip_paths,notnull"` // JSON array of paths that bypass the WAF
 	HealthCheck    string    `bun:"health_check,notnull"`   // JSON model.HealthCheck
 	Redirect       string    `bun:"redirect,notnull"`       // JSON model.Redirect
+	PathRules      string    `bun:"path_rules,notnull"`     // JSON []model.PathRule
 	Enabled        bool      `bun:"enabled,notnull"`
 	CreatedAt      time.Time `bun:"created_at,notnull"`
 	UpdatedAt      time.Time `bun:"updated_at,notnull"`
@@ -90,6 +91,12 @@ func (r serviceRow) toModel() (model.Service, error) {
 			return model.Service{}, err
 		}
 	}
+	rules := []model.PathRule{}
+	if r.PathRules != "" {
+		if err := json.Unmarshal([]byte(r.PathRules), &rules); err != nil {
+			return model.Service{}, err
+		}
+	}
 	return model.Service{
 		ID:              r.ID,
 		Name:            r.Name,
@@ -105,6 +112,7 @@ func (r serviceRow) toModel() (model.Service, error) {
 		WAFSkipPaths:    skip,
 		HealthCheck:     hc,
 		Redirect:        rd,
+		PathRules:       rules,
 		Enabled:         r.Enabled,
 		CreatedAt:       r.CreatedAt,
 		UpdatedAt:       r.UpdatedAt,
@@ -204,6 +212,10 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 	if err != nil {
 		return model.Service{}, err
 	}
+	pr, err := json.Marshal(orRules(in.PathRules))
+	if err != nil {
+		return model.Service{}, err
+	}
 	now := time.Now().UTC()
 	row := serviceRow{
 		ID:             id.String(),
@@ -220,6 +232,7 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 		WAFSkipPaths:   string(skip),
 		HealthCheck:    string(hc),
 		Redirect:       string(rd),
+		PathRules:      string(pr),
 		Enabled:        true,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -290,6 +303,10 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 	if err != nil {
 		return model.Service{}, err
 	}
+	pr, err := json.Marshal(orRules(in.PathRules))
+	if err != nil {
+		return model.Service{}, err
+	}
 	row := serviceRow{
 		ID:             id,
 		Name:           in.Name,
@@ -305,11 +322,12 @@ func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) 
 		WAFSkipPaths:   string(skip),
 		HealthCheck:    string(hc),
 		Redirect:       string(rd),
+		PathRules:      string(pr),
 		Enabled:        in.Enabled,
 		UpdatedAt:      time.Now().UTC(),
 	}
 	res, err := s.DB.NewUpdate().Model(&row).
-		Column("name", "public_hostname", "extra_hostnames", "http_config", "raw_caddy", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "waf_skip_paths", "health_check", "redirect", "enabled", "updated_at").
+		Column("name", "public_hostname", "extra_hostnames", "http_config", "raw_caddy", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "waf_skip_paths", "health_check", "redirect", "path_rules", "enabled", "updated_at").
 		WherePK().Exec(ctx)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -343,6 +361,13 @@ func orDefault(v, def string) string {
 func orEmpty(v []string) []string {
 	if v == nil {
 		return []string{}
+	}
+	return v
+}
+
+func orRules(v []model.PathRule) []model.PathRule {
+	if v == nil {
+		return []model.PathRule{}
 	}
 	return v
 }

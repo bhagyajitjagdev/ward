@@ -934,6 +934,10 @@ components:
         http: { $ref: "#/components/schemas/HTTPConfig" }
         health_check: { $ref: "#/components/schemas/HealthCheck" }
         redirect: { $ref: "#/components/schemas/Redirect" }
+        path_rules:
+          type: array
+          items: { $ref: "#/components/schemas/PathRule" }
+          description: Route paths of this host to different backends (or deny them). The WAF runs once at host level, before the split; `upstreams` is the default when no rule matches.
         raw_caddy: { type: string, description: "Advanced: a raw Caddyfile fragment spliced into the route." }
         enabled: { type: boolean }
         created_at: { type: string, format: date-time }
@@ -979,6 +983,20 @@ components:
         status: { type: integer, description: '301 or 302; 0 → 302.' }
         preserve_path: { type: boolean, description: 'Append the original path + query to the target.' }
 
+    PathRule:
+      type: object
+      description: Routes one path of a service to its own backend, or denies it. Applied most-specific-first (exact before prefix, longer path before shorter).
+      required: [path]
+      properties:
+        path: { type: string, description: 'The path to match, e.g. "/api".' }
+        match: { type: string, enum: ["prefix", "exact"], description: 'Match mode; defaults to "prefix" (the path and everything under it).' }
+        upstreams:
+          type: array
+          items: { type: string }
+          description: Dial targets for this path. Required unless `deny` is set.
+        deny: { type: boolean, description: 'Return 403 for this path instead of proxying.' }
+        strip_prefix: { type: string, description: 'Strip this prefix from the request path before proxying upstream.' }
+
     ServiceInput:
       type: object
       required: [name, public_hostnames] # upstreams OR a redirect target (checked in the API)
@@ -1003,6 +1021,10 @@ components:
         http: { $ref: "#/components/schemas/HTTPConfig" }
         health_check: { $ref: "#/components/schemas/HealthCheck" }
         redirect: { $ref: "#/components/schemas/Redirect" }
+        path_rules:
+          type: array
+          items: { $ref: "#/components/schemas/PathRule" }
+          description: Route paths of this host to different backends (or deny them). `upstreams` is the default when no rule matches.
         raw_caddy: { type: string }
 
     ServiceUpdate:

@@ -58,6 +58,7 @@ func main() {
 	check("raw-caddyfile", checkRawCaddy)
 	check("raw-caddy-plugin", checkRawCaddyPlugin)
 	check("redirect", checkRedirect)
+	check("path-routing", checkPathRouting)
 	check("edge-versions", checkEdgeVersions)
 	check("snapshots", checkSnapshots)
 	check("snapshot-export", checkSnapshotAndExport)
@@ -508,6 +509,46 @@ func checkRedirect() error {
 		}
 		if loc := resp.Header.Get("Location"); loc != "https://new.example.com/foo?x=1" {
 			return fmt.Errorf("Location = %q, want path preserved", loc)
+		}
+		return nil
+	})
+}
+
+func checkPathRouting() error {
+	// One host, WAF on: /api → appserver (prefix stripped), /internal → 403, and the
+	// default (everything else) → whoami. Proves most-specific routing, strip-prefix,
+	// deny, and that the host-level WAF still runs once before the path split.
+	spec := map[string]any{
+		"name": "route.test", "public_hostnames": []string{"route.test"},
+		"upstreams": []string{upstream2}, // default pool → whoami
+		"tls_mode":  "none", "waf_enabled": true, "waf_mode": "On", "enabled": true,
+		"path_rules": []map[string]any{
+			{"path": "/api", "match": "prefix", "upstreams": []string{upstream}, "strip_prefix": "/api"},
+			{"path": "/internal", "match": "prefix", "deny": true},
+		},
+	}
+	_, done, err := mkService(spec)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return retry(15, 400*time.Millisecond, func() error {
+		// /api/echo → appserver with the /api prefix stripped (upstream sees /echo).
+		if st, body := edge("GET", "route.test", "/api/echo", nil, ""); st != 200 || !strings.Contains(body, `"path":"/echo"`) {
+			return fmt.Errorf("/api/echo should reach appserver with prefix stripped, got %d %q", st, trim(body))
+		}
+		// Unmatched path → the default pool (whoami).
+		if st, body := edge("GET", "route.test", "/", nil, ""); st != 200 || !strings.Contains(body, "Hostname") {
+			return fmt.Errorf("/ should reach the default backend (whoami), got %d %q", st, trim(body))
+		}
+		// /internal → denied with a 403.
+		if st, _ := edge("GET", "route.test", "/internal/secret", nil, ""); st != 403 {
+			return fmt.Errorf("/internal should be denied (403), got %d", st)
+		}
+		// The host-level WAF still runs before the split: a SQLi on an otherwise-proxied
+		// path (would be 200 via the default) is blocked.
+		if st, _ := edge("GET", "route.test", "/other?q="+sqli, nil, ""); st != 403 {
+			return fmt.Errorf("WAF should still block a SQLi before the path split, got %d", st)
 		}
 		return nil
 	})

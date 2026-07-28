@@ -662,7 +662,9 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 	// Structured HTTP controls run after the WAF (so it inspects the client's real
 	// request) and before the proxy: auth gate → headers → path rewrite → compression.
 	handlers = append(handlers, httpConfigHandlers(s.HTTP)...)
-	handlers = append(handlers, reverseProxyHandler(s))
+	// Terminal handler: a plain reverse-proxy, or — when the service has path rules —
+	// a subroute that splits the (already WAF-inspected) request across backends by path.
+	handlers = append(handlers, terminalProxyHandler(s))
 	innerRoutes = append(innerRoutes, map[string]any{"handle": handlers})
 
 	return map[string]any{
@@ -832,6 +834,90 @@ func reverseProxyHandler(s model.Service) map[string]any {
 	}
 	h["health_checks"] = hc
 	return h
+}
+
+// terminalProxyHandler is the last handler in a service's chain. Without path rules
+// it's a plain reverse-proxy to the service's upstreams. With path rules it's a
+// subroute: each rule matches its path (most-specific first) and proxies to its own
+// backend or denies it (403); the service's own upstreams are the no-match default.
+// The WAF has already run once at host level, above this — the split adds only cheap
+// routing handlers, no extra WAF instances.
+func terminalProxyHandler(s model.Service) map[string]any {
+	if len(s.PathRules) == 0 {
+		return reverseProxyHandler(s)
+	}
+	rules := sortPathRules(s.PathRules)
+	routes := make([]any, 0, len(rules)+1)
+	for _, r := range rules {
+		route := map[string]any{"match": []any{map[string]any{"path": pathRuleGlobs(r)}}}
+		if r.Deny {
+			route["handle"] = []any{map[string]any{"handler": "static_response", "status_code": 403}}
+		} else {
+			var h []any
+			if sp := strings.TrimSpace(r.StripPrefix); sp != "" {
+				h = append(h, map[string]any{"handler": "rewrite", "strip_path_prefix": sp})
+			}
+			h = append(h, ruleReverseProxy(r))
+			route["handle"] = h
+		}
+		routes = append(routes, route)
+	}
+	// Default (catch-all): a no-match route with the service's own upstreams runs only
+	// when no rule above terminated the request.
+	routes = append(routes, map[string]any{"handle": []any{reverseProxyHandler(s)}})
+	return map[string]any{"handler": "subroute", "routes": routes}
+}
+
+// sortPathRules orders rules most-specific-first so the first match wins: exact before
+// prefix, then longer path before shorter.
+func sortPathRules(in []model.PathRule) []model.PathRule {
+	out := append([]model.PathRule(nil), in...)
+	sort.SliceStable(out, func(i, j int) bool {
+		if ei, ej := out[i].Match == "exact", out[j].Match == "exact"; ei != ej {
+			return ei
+		}
+		return len(strings.TrimRight(out[i].Path, "/")) > len(strings.TrimRight(out[j].Path, "/"))
+	})
+	return out
+}
+
+// pathRuleGlobs renders a rule's matcher: an exact match is the path itself; a prefix
+// match is the path plus everything under it (so "/api" covers /api and /api/*, but not
+// /apixyz).
+func pathRuleGlobs(r model.PathRule) []string {
+	p := strings.TrimSpace(r.Path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	if r.Match == "exact" {
+		return []string{p}
+	}
+	pp := strings.TrimRight(p, "/")
+	if pp == "" {
+		return []string{"/*"} // root prefix ⇒ everything
+	}
+	return []string{pp, pp + "/*"}
+}
+
+// ruleReverseProxy proxies a path rule to its own upstreams with passive health checks
+// (a rule's backends can't share one active-probe path, so active checks stay on the
+// service's default pool only).
+func ruleReverseProxy(r model.PathRule) map[string]any {
+	ups := make([]any, 0, len(r.Upstreams))
+	for _, u := range r.Upstreams {
+		ups = append(ups, map[string]any{"dial": u})
+	}
+	return map[string]any{
+		"handler":   "reverse_proxy",
+		"upstreams": ups,
+		"health_checks": map[string]any{
+			"passive": map[string]any{
+				"fail_duration":    "30s",
+				"max_fails":        3,
+				"unhealthy_status": []any{500, 502, 503, 504},
+			},
+		},
+	}
 }
 
 // redirectHandler emits a static 301/302 for a redirect-only service. With PreservePath

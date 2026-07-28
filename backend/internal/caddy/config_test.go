@@ -549,6 +549,81 @@ func TestGenerateTLSMinVersion(t *testing.T) {
 	}
 }
 
+func TestGeneratePathRules(t *testing.T) {
+	services := []model.Service{{
+		ID: "s", Name: "app", PublicHostname: "app.example.com",
+		Upstreams: []string{"web:80"}, Enabled: true, TLSMode: "none",
+		PathRules: []model.PathRule{
+			{Path: "/api", Match: "prefix", Upstreams: []string{"api:8080"}, StripPrefix: "/api"},
+			{Path: "/internal", Match: "prefix", Deny: true},
+			{Path: "/health", Match: "exact", Upstreams: []string{"probe:9000"}},
+		},
+	}}
+	out, err := Generate(Input{Services: services}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{"api:8080", "probe:9000", "web:80", "strip_path_prefix", `"/api"`, `"/api/*"`, `"status_code": 403`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("path-rules config missing %q", want)
+		}
+	}
+
+	// Structure: the terminal handler is a subroute whose routes are ordered
+	// most-specific-first (exact /health, then /internal & /api by length), with a
+	// final no-match default carrying the service's own upstreams.
+	var cfg map[string]any
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	routes := cfg["apps"].(map[string]any)["http"].(map[string]any)["servers"].(map[string]any)["edge"].(map[string]any)["routes"].([]any)
+	split := findSplitSubroute(t, routes)
+	if n := len(split); n != 4 {
+		t.Fatalf("want 3 rules + 1 default = 4 split routes, got %d", n)
+	}
+	// The last route is the catch-all default: no matcher.
+	last := split[len(split)-1].(map[string]any)
+	if _, hasMatch := last["match"]; hasMatch {
+		t.Error("the default (catch-all) route must have no matcher")
+	}
+	// The exact rule sorts ahead of the prefix rules.
+	first := split[0].(map[string]any)
+	fm := first["match"].([]any)[0].(map[string]any)["path"].([]any)
+	if len(fm) != 1 || fm[0] != "/health" {
+		t.Errorf("most-specific-first: exact /health should be route[0], got %v", fm)
+	}
+}
+
+// findSplitSubroute digs the path-split subroute's routes out of the generated config:
+// the service route → subroute → the inner handle's terminal subroute routes.
+func findSplitSubroute(t *testing.T, routes []any) []any {
+	t.Helper()
+	for _, r := range routes {
+		rm, _ := r.(map[string]any)
+		handle, _ := rm["handle"].([]any)
+		if len(handle) == 0 {
+			continue
+		}
+		h0, _ := handle[0].(map[string]any)
+		inner, _ := h0["routes"].([]any)
+		for _, ir := range inner {
+			irm, _ := ir.(map[string]any)
+			ih, _ := irm["handle"].([]any)
+			for _, hh := range ih {
+				hhm, _ := hh.(map[string]any)
+				if hhm["handler"] == "subroute" {
+					if sr, ok := hhm["routes"].([]any); ok {
+						return sr
+					}
+				}
+			}
+		}
+	}
+	t.Fatal("no path-split subroute found in config")
+	return nil
+}
+
 // Ward never sets default_sni: a handshake without SNI must have no cert to fall back
 // to, so it is refused (strict SNI). This is a security invariant — guard it directly.
 func TestGenerateStrictSNI(t *testing.T) {

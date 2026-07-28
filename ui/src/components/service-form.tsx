@@ -21,8 +21,18 @@ export type ServiceFormState = {
   http: HTTPConfig
   healthCheck: HealthCheckForm
   redirect: RedirectForm
+  pathRules: PathRuleForm[]
   rawCaddy: string
   enabled: boolean
+}
+
+// PathRuleForm mirrors the API's PathRule; `action` drives the proxy/deny toggle.
+export type PathRuleForm = {
+  path: string
+  match: "prefix" | "exact"
+  action: "proxy" | "deny"
+  upstreams: string[]
+  stripPrefix: string
 }
 
 // HealthCheckForm mirrors the API's HealthCheck but keeps expect_status as a string for
@@ -57,6 +67,7 @@ export function emptyServiceForm(): ServiceFormState {
     http: {},
     healthCheck: { active: false, path: "", interval: "", timeout: "", expectStatus: "" },
     redirect: { enabled: false, to: "", status: "302", preservePath: true },
+    pathRules: [],
     rawCaddy: "",
     enabled: true,
   }
@@ -86,6 +97,13 @@ export function serviceToForm(s: Service): ServiceFormState {
       status: s.redirect?.status ? String(s.redirect.status) : "302",
       preservePath: s.redirect?.preserve_path ?? true,
     },
+    pathRules: (s.path_rules ?? []).map((r) => ({
+      path: r.path,
+      match: r.match === "exact" ? "exact" : "prefix",
+      action: r.deny ? "deny" : "proxy",
+      upstreams: r.upstreams ?? [],
+      stripPrefix: r.strip_prefix ?? "",
+    })),
     rawCaddy: s.raw_caddy ?? "",
     enabled: s.enabled,
   }
@@ -112,6 +130,15 @@ export function formToInput(f: ServiceFormState): ServiceUpdate {
     redirect: f.redirect.enabled
       ? { to: f.redirect.to.trim(), status: Number(f.redirect.status) || 302, preserve_path: f.redirect.preservePath }
       : {},
+    path_rules: f.redirect.enabled
+      ? []
+      : f.pathRules
+          .filter((r) => r.path.trim())
+          .map((r) =>
+            r.action === "deny"
+              ? { path: r.path.trim(), match: r.match, deny: true }
+              : { path: r.path.trim(), match: r.match, upstreams: r.upstreams, strip_prefix: r.stripPrefix.trim() || undefined },
+          ),
     raw_caddy: f.rawCaddy.trim() || undefined,
     enabled: f.enabled,
   }
@@ -119,7 +146,10 @@ export function formToInput(f: ServiceFormState): ServiceUpdate {
 
 export function serviceFormValid(f: ServiceFormState): boolean {
   const backend = f.redirect.enabled ? f.redirect.to.trim().length > 0 : f.upstreams.length > 0
-  return f.name.trim().length > 0 && f.hostnames.length > 0 && backend
+  // Every proxy path rule needs at least one upstream (deny rules don't).
+  const rulesOk =
+    f.redirect.enabled || f.pathRules.every((r) => !r.path.trim() || r.action === "deny" || r.upstreams.length > 0)
+  return f.name.trim().length > 0 && f.hostnames.length > 0 && backend && rulesOk
 }
 
 // ── Layout primitives ─────────────────────────────────────────────────────────
@@ -243,6 +273,7 @@ export function ServiceFormFields({
   const setHttp = (patch: Partial<HTTPConfig>) => set({ http: { ...h, ...patch } })
   const setHC = (patch: Partial<HealthCheckForm>) => set({ healthCheck: { ...form.healthCheck, ...patch } })
   const setRedir = (patch: Partial<RedirectForm>) => set({ redirect: { ...form.redirect, ...patch } })
+  const setRules = (pathRules: PathRuleForm[]) => set({ pathRules })
 
   return (
     <div className="grid gap-y-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -368,6 +399,87 @@ export function ServiceFormFields({
             <p className="mt-1 text-xs text-muted-foreground">
               Passive checks (shedding a failing upstream) are always on. Active adds a periodic probe.
             </p>
+          </Field>
+          <Field label="Path routing" hint="— send paths of this host to other backends">
+            <div className="space-y-3">
+              {form.pathRules.map((rule, i) => {
+                const update = (patch: Partial<PathRuleForm>) =>
+                  setRules(form.pathRules.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+                const remove = () => setRules(form.pathRules.filter((_, j) => j !== i))
+                return (
+                  <div key={i} className="space-y-2.5 rounded-md border bg-muted/30 p-3">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        className="h-9 flex-1 font-mono"
+                        placeholder="/api"
+                        value={rule.path}
+                        onChange={(e) => update({ path: e.target.value })}
+                        aria-label="Path"
+                      />
+                      <Select value={rule.match} onValueChange={(v) => update({ match: v as "prefix" | "exact" })}>
+                        <SelectTrigger className="h-9 w-28" aria-label="Match mode">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="prefix">prefix</SelectItem>
+                          <SelectItem value="exact">exact</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={rule.action} onValueChange={(v) => update({ action: v as "proxy" | "deny" })}>
+                        <SelectTrigger className="h-9 w-28" aria-label="Action">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="proxy">proxy</SelectItem>
+                          <SelectItem value="deny">deny 403</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <button
+                        type="button"
+                        onClick={remove}
+                        className="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="Remove path rule"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                    {rule.action === "proxy" && (
+                      <div className="grid gap-2.5 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <SubLabel>Upstreams</SubLabel>
+                          <TokenInput
+                            ariaLabel="Path rule upstreams"
+                            value={rule.upstreams}
+                            onChange={(upstreams) => update({ upstreams })}
+                            placeholder="api-1.mesh:8000"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <SubLabel>Strip prefix</SubLabel>
+                          <Input
+                            className="h-9 font-mono"
+                            placeholder="/api"
+                            value={rule.stripPrefix}
+                            onChange={(e) => update({ stripPrefix: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              <button
+                type="button"
+                onClick={() => setRules([...form.pathRules, { path: "", match: "prefix", action: "proxy", upstreams: [], stripPrefix: "" }])}
+                className="inline-flex items-center gap-1.5 rounded-md border border-dashed px-3 py-1.5 text-sm text-muted-foreground hover:border-solid hover:text-foreground"
+              >
+                <Plus className="size-4" /> Add path rule
+              </button>
+              <p className="text-xs text-muted-foreground">
+                Applied most-specific-first (exact before prefix, longer before shorter). Anything unmatched falls
+                through to the upstreams above. The WAF runs once for the whole host, before the split.
+              </p>
+            </div>
           </Field>
             </>
           )}
