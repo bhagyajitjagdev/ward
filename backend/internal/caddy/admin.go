@@ -21,7 +21,11 @@ type Client struct {
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: 20 * time.Second},
+		// Generous ceiling: a config /load can legitimately take many seconds (Caddy
+		// tears down old listeners synchronously). A too-tight timeout cancels the load
+		// mid-reload, which can wedge Caddy's admin endpoint — far worse than waiting.
+		// The caller's context still bounds it (2 min for API pushes).
+		http: &http.Client{Timeout: 2 * time.Minute},
 	}
 }
 

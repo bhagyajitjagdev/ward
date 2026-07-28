@@ -393,6 +393,11 @@ func TestGenerateWithCrowdSec(t *testing.T) {
 	if cfg.Apps.CrowdSec["api_key"] != "secret-key" || cfg.Apps.CrowdSec["enable_hard_fails"] != false {
 		t.Errorf("crowdsec app not wired (fail-open expected): %#v", cfg.Apps.CrowdSec)
 	}
+	// Live mode (not streaming): the bouncer must not bulk-pull every decision on
+	// provision, or a large community blocklist blocks each config reload for seconds.
+	if cfg.Apps.CrowdSec["enable_streaming"] != false {
+		t.Errorf("crowdsec must run in live mode (enable_streaming=false), got %#v", cfg.Apps.CrowdSec["enable_streaming"])
+	}
 	routes := cfg.Apps.HTTP.Servers.Edge.Routes
 	if len(routes) == 0 || len(routes[0].Handle) == 0 || routes[0].Handle[0].Handler != "crowdsec" {
 		t.Errorf("crowdsec must be the first route handler, got routes=%#v", routes)
@@ -507,6 +512,51 @@ func TestGenerateTLS(t *testing.T) {
 	if strings.Contains(string(out2), `"tls"`) {
 		t.Error("dev-disabled config should have no tls app")
 	}
+}
+
+// listenAddrs pulls the edge server's listen list out of a generated config.
+func listenAddrs(t *testing.T, out []byte) []string {
+	t.Helper()
+	var cfg map[string]any
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	raw := cfg["apps"].(map[string]any)["http"].(map[string]any)["servers"].(map[string]any)["edge"].(map[string]any)["listen"].([]any)
+	got := make([]string, len(raw))
+	for i, v := range raw {
+		got[i] = v.(string)
+	}
+	return got
+}
+
+// With auto-HTTPS on but every service HTTP-only (tls_mode=none), the edge must bind
+// :80 only — binding :443 stands up an unused HTTP/3 listener whose teardown on the
+// next reload blocks ~20s and can wedge Caddy. Adding one TLS service brings :443 back.
+func TestGenerateListenOnlyWhenTLSUsed(t *testing.T) {
+	noneOnly := []model.Service{
+		{ID: "1", PublicHostname: "a.example.com", Upstreams: []string{"x:1"}, Enabled: true, TLSMode: "none"},
+		{ID: "2", PublicHostname: "b.example.com", Upstreams: []string{"x:1"}, Enabled: true, TLSMode: "none"},
+	}
+	opt := DefaultOptions() // auto-HTTPS enabled (DisableAutoHTTPS defaults false)
+	if got := listenAddrs(t, mustGen(t, noneOnly, opt)); len(got) != 1 || got[0] != ":80" {
+		t.Errorf("all tls=none → listen should be [:80] only, got %v", got)
+	}
+
+	withTLS := append([]model.Service(nil), noneOnly...)
+	withTLS = append(withTLS, model.Service{ID: "3", PublicHostname: "s.example.com", Upstreams: []string{"x:1"}, Enabled: true, TLSMode: "internal"})
+	got := listenAddrs(t, mustGen(t, withTLS, opt))
+	if len(got) != 2 || got[1] != ":443" {
+		t.Errorf("a TLS service → listen should include :443, got %v", got)
+	}
+}
+
+func mustGen(t *testing.T, svcs []model.Service, opt Options) []byte {
+	t.Helper()
+	out, err := Generate(Input{Services: svcs}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func TestGenerateTLSMinVersion(t *testing.T) {

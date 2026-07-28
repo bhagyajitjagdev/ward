@@ -39,6 +39,7 @@ func main() {
 	setup()
 
 	check("proxy", checkProxy)
+	check("listen-http-only", checkListenOnlyHTTP)
 	check("multi-hostname", checkMultiHostname)
 	check("wildcard-ordering", checkWildcardOrdering)
 	check("active-health-check", checkActiveHealthCheck)
@@ -86,6 +87,34 @@ func checkProxy() error {
 		st, body := edge("GET", "proxy.test", "/", nil, "")
 		if st != 200 || !strings.Contains(body, "wardtest-upstream") {
 			return fmt.Errorf("GET / → %d %q", st, trim(body))
+		}
+		return nil
+	})
+}
+
+func checkListenOnlyHTTP() error {
+	// Regression for the reload-wedge fix: with auto-HTTPS on but only tls_mode=none
+	// services, the edge must bind :80 only — binding :443 stands up an unused HTTP/3
+	// listener whose teardown on the next reload blocks ~20s and can wedge Caddy.
+	_, done, err := mkService(svcSpec("listen.test", false, ""))
+	if err != nil {
+		return err
+	}
+	defer done()
+	admin := env("ADMIN", "http://caddy:2019")
+	return retry(10, 300*time.Millisecond, func() error {
+		resp, err := httpc.Get(admin + "/config/apps/http/servers/edge/listen")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		s := strings.TrimSpace(string(b))
+		if strings.Contains(s, ":443") {
+			return fmt.Errorf("no TLS service → edge must listen on :80 only, got %s", s)
+		}
+		if !strings.Contains(s, ":80") {
+			return fmt.Errorf("edge should listen on :80, got %s", s)
 		}
 		return nil
 	})

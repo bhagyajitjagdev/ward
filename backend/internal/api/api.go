@@ -587,12 +587,17 @@ func (h *Handler) deleteService(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// reconcile regenerates + loads the Caddy config from current DB state.
+// reconcile regenerates + loads the Caddy config from current DB state. It runs on a
+// context detached from the request: a client disconnect (or a slow-reload timeout on
+// the caller's side) must not cancel an in-flight Caddy /load — a half-applied load can
+// wedge Caddy's admin endpoint. A generous ceiling bounds it instead.
 func (h *Handler) reconcile(ctx context.Context) {
 	if h.applier == nil {
 		return
 	}
-	if err := h.applier.Apply(ctx); err != nil {
+	applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	if err := h.applier.Apply(applyCtx); err != nil {
 		log.Printf("reconcile: failed to push config to Caddy (will retry): %v", err)
 	}
 }

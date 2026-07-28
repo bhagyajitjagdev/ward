@@ -278,7 +278,16 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		server["listen"] = []string{opt.HTTPPort}
 		server["automatic_https"] = map[string]any{"disable": true}
 	} else {
-		server["listen"] = []string{opt.HTTPPort, opt.HTTPSPort}
+		// Bind the HTTPS port only when a service actually terminates TLS. Binding it
+		// unconditionally stands up an HTTP/3 (QUIC/UDP) listener that nothing uses, and
+		// tearing that listener down on the *next* config reload blocks for ~20s — enough
+		// to trip Ward's admin-client timeout, cancel the reload mid-flight, and wedge
+		// Caddy's admin endpoint. An all-HTTP (tls_mode=none) edge stays on :80 only.
+		if len(managedSubs) > 0 || len(internalSubs) > 0 || len(customSubs) > 0 {
+			server["listen"] = []string{opt.HTTPPort, opt.HTTPSPort}
+		} else {
+			server["listen"] = []string{opt.HTTPPort}
+		}
 		// Ward emits explicit per-host HTTP->HTTPS redirects (above), so turn off
 		// Caddy's automatic global one.
 		autoHTTPS := map[string]any{"disable_redirects": true}
@@ -354,15 +363,19 @@ func Generate(in Input, opt Options) ([]byte, error) {
 	if tlsApp != nil {
 		apps["tls"] = tlsApp
 	}
-	// CrowdSec bouncer: the global app streams decisions from LAPI; the front route
-	// (added above, before the IP deny) drops banned IPs at the edge. enable_hard_fails
-	// stays false so a LAPI outage fails open — the edge keeps serving (principle #1).
+	// CrowdSec bouncer: the front route (added above, before the IP deny) drops banned
+	// IPs at the edge. Live mode (enable_streaming:false) queries the LAPI per client IP
+	// (cached) instead of bulk-pulling every decision on provision — critical because
+	// Ward re-provisions the whole config on every change, and a large community
+	// blocklist (tens of thousands of decisions) makes a streaming re-pull block each
+	// reload for many seconds. enable_hard_fails stays false so a LAPI outage fails open
+	// — the edge keeps serving (principle #1).
 	if crowdsecOn(opt) {
 		apps["crowdsec"] = map[string]any{
 			"api_url":           opt.CrowdSecAPIURL,
 			"api_key":           opt.CrowdSecAPIKey,
 			"ticker_interval":   "10s",
-			"enable_streaming":  true,
+			"enable_streaming":  false,
 			"enable_hard_fails": false,
 		}
 	}
