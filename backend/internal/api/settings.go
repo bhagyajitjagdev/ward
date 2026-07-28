@@ -18,6 +18,7 @@ type settingsDTO struct {
 	CRSVersion          string `json:"crs_version"`           // read-only: OWASP CRS version the edge reported (from detections)
 	CrowdSecEnabled     *bool  `json:"crowdsec_enabled,omitempty"` // toggle the bouncer (pointer: distinguishes omitted from false on PATCH)
 	CrowdSecConfigured  bool   `json:"crowdsec_configured"`        // read-only: LAPI URL + key present (env)
+	MetricsEnabled      *bool  `json:"metrics_enabled,omitempty"`  // expose Prometheus metrics at the admin /metrics
 	// EdgeVersions is read-only: the components compiled into the ward-caddy image this
 	// release targets (component → version). Ground truth is the image's OCI labels.
 	EdgeVersions map[string]string `json:"edge_versions,omitempty"`
@@ -32,6 +33,7 @@ func validWAFMode(m string) bool {
 func (h *Handler) currentSettings(r *http.Request) settingsDTO {
 	configured := h.crowdsec != nil
 	csEnabled := h.store.CrowdSecEnabled(r.Context(), configured)
+	metricsEnabled := h.store.MetricsEnabled(r.Context(), false)
 	return settingsDTO{
 		WAFEngineMode:       h.store.WAFEngineMode(r.Context(), "DetectionOnly"),
 		ACMEEmail:           h.store.ACMEEmail(r.Context(), ""),
@@ -40,6 +42,7 @@ func (h *Handler) currentSettings(r *http.Request) settingsDTO {
 		CRSVersion:          h.store.LatestCRSVersion(r.Context()),
 		CrowdSecEnabled:     &csEnabled,
 		CrowdSecConfigured:  configured,
+		MetricsEnabled:      &metricsEnabled,
 		EdgeVersions:        edge.Versions(),
 	}
 }
@@ -119,6 +122,18 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.audit(r, "settings.update", store.CrowdSecEnabledKey, val)
+		changed = true
+	}
+	if in.MetricsEnabled != nil {
+		val := "0"
+		if *in.MetricsEnabled {
+			val = "1"
+		}
+		if err := h.store.SetSetting(r.Context(), store.MetricsEnabledKey, val); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.audit(r, "settings.update", store.MetricsEnabledKey, val)
 		changed = true
 	}
 	if !changed {

@@ -875,6 +875,8 @@ export interface components {
             crowdsec_enabled?: boolean;
             /** @description Read-only — LAPI URL + key are set in the deployment. */
             crowdsec_configured?: boolean;
+            /** @description Expose Prometheus metrics (per-host) at the internal admin /metrics. */
+            metrics_enabled?: boolean;
             /** @description Read-only — versions of the components compiled into the ward-caddy image this release targets (component → version). Ground truth is the image's OCI labels. */
             edge_versions?: {
                 [key: string]: string;
@@ -887,6 +889,7 @@ export interface components {
             access_retention_days?: number;
             waf_retention_days?: number;
             crowdsec_enabled?: boolean;
+            metrics_enabled?: boolean;
         };
         CrowdSecStatus: {
             /** @description LAPI URL + key present. */

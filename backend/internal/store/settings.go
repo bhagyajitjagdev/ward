@@ -22,6 +22,7 @@ const (
 	AccessRetentionKey = "access.retention_days" // how long to keep raw access events
 	WAFRetentionKey    = "waf.retention_days"    // how long to keep WAF detections
 	CrowdSecEnabledKey = "crowdsec.enabled"      // "1"/"0" — wire the CrowdSec bouncer into the edge
+	MetricsEnabledKey  = "metrics.enabled"       // "1"/"0" — expose Prometheus metrics at the admin /metrics
 )
 
 // WAFEngineMode returns the global WAF engine-mode default, falling back to
@@ -71,6 +72,13 @@ func (s *Store) WAFRetentionDays(ctx context.Context, fallback int) int {
 // secrets), not the DB.
 func (s *Store) CrowdSecEnabled(ctx context.Context, fallback bool) bool {
 	if v, err := s.GetSetting(ctx, CrowdSecEnabledKey); err == nil && v != "" {
+		return v == "1"
+	}
+	return fallback
+}
+
+func (s *Store) MetricsEnabled(ctx context.Context, fallback bool) bool {
+	if v, err := s.GetSetting(ctx, MetricsEnabledKey); err == nil && v != "" {
 		return v == "1"
 	}
 	return fallback

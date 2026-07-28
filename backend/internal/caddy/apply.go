@@ -79,6 +79,7 @@ func (a *Applier) Apply(ctx context.Context) error {
 	opt.WAFEngineMode = a.store.WAFEngineMode(ctx, opt.WAFEngineMode) // DB setting overrides the env/compiled default
 	opt.ACMEEmail = a.store.ACMEEmail(ctx, opt.ACMEEmail)
 	opt.CrowdSecEnabled = a.store.CrowdSecEnabled(ctx, opt.CrowdSecEnabled) // DB toggle over the env default (URL+key stay env)
+	opt.MetricsEnabled = a.store.MetricsEnabled(ctx, opt.MetricsEnabled)    // DB toggle (default off)
 	cfg, err := Generate(Input{
 		Services:     services,
 		Exclusions:   exclusions,

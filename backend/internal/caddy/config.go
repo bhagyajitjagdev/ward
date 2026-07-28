@@ -28,6 +28,7 @@ type Options struct {
 	CrowdSecEnabled  bool   // wire the CrowdSec bouncer into the edge
 	CrowdSecAPIURL   string // LAPI base URL, e.g. http://crowdsec:8080/
 	CrowdSecAPIKey   string // bouncer API key registered with LAPI
+	MetricsEnabled   bool   // expose Prometheus HTTP metrics (per-host) at the admin /metrics
 }
 
 // crowdsecOn reports whether the CrowdSec bouncer should be wired in — enabled and
@@ -333,9 +334,13 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		}
 	}
 
-	apps := map[string]any{
-		"http": map[string]any{"servers": map[string]any{"edge": server}},
+	httpApp := map[string]any{"servers": map[string]any{"edge": server}}
+	if opt.MetricsEnabled {
+		// Collect per-host HTTP metrics; served (with Go/process metrics) at the admin
+		// endpoint's /metrics — which is internal-only, never published.
+		httpApp["metrics"] = map[string]any{"per_host": true}
 	}
+	apps := map[string]any{"http": httpApp}
 	if tlsApp != nil {
 		apps["tls"] = tlsApp
 	}

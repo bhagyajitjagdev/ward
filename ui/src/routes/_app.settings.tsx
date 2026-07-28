@@ -39,6 +39,8 @@ function SettingsPage() {
 
         <CrowdSecSection />
 
+        <MetricsSection />
+
         <ExportSection />
 
         <Section title="Appearance" description="Theme for this browser.">
@@ -135,6 +137,43 @@ function RulesetSection() {
 // ships. Read-only — they move together with the Ward version. Values come from the
 // image's pinned build (kept in lockstep with caddy/Dockerfile); the authoritative
 // source for a running image is `docker inspect` (its OCI labels).
+function MetricsSection() {
+  const qc = useQueryClient()
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const enabled = settings?.metrics_enabled ?? false
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => api.updateSettings({ metrics_enabled: on }),
+    onSuccess: (s) => {
+      qc.setQueryData(["settings"], s)
+      toast.success(s.metrics_enabled ? "Prometheus metrics enabled" : "Prometheus metrics disabled")
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't change metrics"),
+  })
+  return (
+    <Section
+      title="Metrics"
+      description="Expose per-host Prometheus metrics at Caddy's internal admin /metrics endpoint — scrape it over your private network (it's never published) and point Grafana at it."
+    >
+      <Segmented
+        options={[
+          { value: "on", label: "Enabled" },
+          { value: "off", label: "Disabled" },
+        ]}
+        value={enabled ? "on" : "off"}
+        onChange={(v) => {
+          const on = v === "on"
+          if (on !== enabled) toggle.mutate(on)
+        }}
+      />
+      {enabled && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Scrape <Mono className="!text-[11px]">http://&lt;edge&gt;:2019/metrics</Mono> from inside the private network.
+        </p>
+      )}
+    </Section>
+  )
+}
+
 function ExportSection() {
   const [busy, setBusy] = useState(false)
   const download = async () => {

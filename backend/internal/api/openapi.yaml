@@ -1026,6 +1026,7 @@ components:
           description: Read-only — OWASP CRS version the running edge reported.
         crowdsec_enabled: { type: boolean, description: Whether the CrowdSec bouncer is wired into the edge. }
         crowdsec_configured: { type: boolean, description: Read-only — LAPI URL + key are set in the deployment. }
+        metrics_enabled: { type: boolean, description: Expose Prometheus metrics (per-host) at the internal admin /metrics. }
         edge_versions:
           type: object
           additionalProperties: { type: string }
@@ -1040,6 +1041,7 @@ components:
         access_retention_days: { type: integer, minimum: 1, maximum: 365 }
         waf_retention_days: { type: integer, minimum: 1, maximum: 365 }
         crowdsec_enabled: { type: boolean }
+        metrics_enabled: { type: boolean }
 
     CrowdSecStatus:
       type: object

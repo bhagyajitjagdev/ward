@@ -60,6 +60,7 @@ func main() {
 	check("edge-versions", checkEdgeVersions)
 	check("snapshots", checkSnapshots)
 	check("snapshot-export", checkSnapshotAndExport)
+	check("metrics", checkMetrics)
 
 	if failures > 0 {
 		fmt.Printf("\n%d check(s) FAILED\n", failures)
@@ -519,6 +520,37 @@ func checkEdgeVersions() error {
 		return fmt.Errorf("settings.edge_versions.caddy is empty")
 	}
 	return nil
+}
+
+func checkMetrics() error {
+	// Off by default → enable, then per-host HTTP metrics show up at the admin /metrics.
+	if st, b := api("PATCH", "/settings", map[string]any{"metrics_enabled": true}); st != 200 {
+		return fmt.Errorf("enable metrics → %d %s", st, trim(string(b)))
+	}
+	defer api("PATCH", "/settings", map[string]any{"metrics_enabled": false})
+	_, done, err := mkService(svcSpec("metrics.test", false, ""))
+	if err != nil {
+		return err
+	}
+	defer done()
+	time.Sleep(300 * time.Millisecond)
+	admin := env("ADMIN", "http://caddy:2019")
+	return retry(12, 400*time.Millisecond, func() error {
+		edge("GET", "metrics.test", "/", nil, "") // generate a request so the counter exists
+		resp, err := httpc.Get(admin + "/metrics")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("/metrics → %d", resp.StatusCode)
+		}
+		if !strings.Contains(string(b), "caddy_http_requests_total") {
+			return fmt.Errorf("no caddy_http_requests_total — HTTP metrics not collected")
+		}
+		return nil
+	})
 }
 
 func checkSnapshotAndExport() error {
