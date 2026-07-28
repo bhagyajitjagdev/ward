@@ -172,13 +172,20 @@ function BlocklistPage() {
 // read-only (the bouncer owns them; Ward only observes). Hidden entirely unless
 // CrowdSec is enabled, so the page stays clean for non-users.
 function CrowdSecDecisions() {
-  const { data: status } = useQuery({ queryKey: ["crowdsec"], queryFn: api.crowdsecStatus, refetchInterval: 10000 })
+  const { data: status } = useQuery({ queryKey: ["crowdsec"], queryFn: api.crowdsecStatus, refetchInterval: 30000 })
   if (!status?.enabled) return null
   const decisions = status.decisions ?? []
+  const total = status.total ?? decisions.length
+  const capped = total > decisions.length
   return (
     <div className="space-y-3 pt-2">
       <div className="flex items-center gap-2">
         <h2 className="font-heading text-sm font-semibold">CrowdSec decisions</h2>
+        {total > 0 && (
+          <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            {total.toLocaleString()}
+          </span>
+        )}
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           · enforced at the edge · read-only
         </span>
@@ -187,6 +194,12 @@ function CrowdSecDecisions() {
           {status.reachable ? "LAPI up" : "LAPI down"}
         </span>
       </div>
+      {capped && (
+        <p className="text-xs text-muted-foreground">
+          Showing the first {decisions.length.toLocaleString()} of {total.toLocaleString()} active decisions
+          (mostly the CrowdSec community blocklist). All are enforced at the edge.
+        </p>
+      )}
       <div className="overflow-hidden rounded-xl border">
         <table className="w-full text-sm">
           <thead>

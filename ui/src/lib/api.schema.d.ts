@@ -928,6 +928,9 @@ export interface components {
             /** @description LAPI answered. */
             reachable: boolean;
             error?: string;
+            /** @description Full count of active decisions (decisions is a capped sample). */
+            total?: number;
+            /** @description A capped sample of active decisions (see total for the full count). */
             decisions: components["schemas"]["CrowdSecDecision"][];
         };
         CrowdSecDecision: {

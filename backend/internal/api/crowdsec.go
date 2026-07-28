@@ -6,12 +6,18 @@ import (
 	"github.com/bhagyajitjagdev/ward/backend/internal/crowdsec"
 )
 
+// decisionSample caps how many decisions the status endpoint returns. A community
+// blocklist can hold tens of thousands; sending them all makes the page crawl and
+// re-serializes on every poll. The UI shows the total and a representative sample.
+const decisionSample = 200
+
 type crowdsecStatusDTO struct {
 	Configured bool                `json:"configured"` // LAPI URL + key present (env)
 	Enabled    bool                `json:"enabled"`    // bouncer wired into the edge (toggle)
 	Reachable  bool                `json:"reachable"`  // LAPI answered
 	Error      string              `json:"error,omitempty"`
-	Decisions  []crowdsec.Decision `json:"decisions"`
+	Total      int                 `json:"total"`     // full count of active decisions
+	Decisions  []crowdsec.Decision `json:"decisions"` // capped sample (see decisionSample)
 }
 
 // crowdsecStatus reports whether CrowdSec is configured/enabled and, if reachable,
@@ -33,6 +39,10 @@ func (h *Handler) crowdsecStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out.Reachable = true
+	out.Total = len(decisions)
+	if len(decisions) > decisionSample {
+		decisions = decisions[:decisionSample]
+	}
 	if decisions != nil {
 		out.Decisions = decisions
 	}
