@@ -508,3 +508,64 @@ func TestGenerateTLS(t *testing.T) {
 		t.Error("dev-disabled config should have no tls app")
 	}
 }
+
+func TestGenerateTLSMinVersion(t *testing.T) {
+	services := []model.Service{
+		{ID: "1", PublicHostname: "a.example.com", Upstreams: []string{"x:1"}, Enabled: true, TLSMode: "internal"},
+	}
+	// Unset → no connection policy (Caddy's built-in floor of 1.2 applies).
+	if out, err := Generate(Input{Services: services}, DefaultOptions()); err != nil {
+		t.Fatal(err)
+	} else if strings.Contains(string(out), "tls_connection_policies") {
+		t.Error("no TLS min set → should emit no connection policy")
+	}
+
+	for setting, want := range map[string]string{"1.2": "tls1.2", "1.3": "tls1.3"} {
+		opt := DefaultOptions()
+		opt.TLSMinVersion = setting
+		out, err := Generate(Input{Services: services}, opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg map[string]any
+		if err := json.Unmarshal(out, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		server := cfg["apps"].(map[string]any)["http"].(map[string]any)["servers"].(map[string]any)["edge"].(map[string]any)
+		pols, ok := server["tls_connection_policies"].([]any)
+		if !ok || len(pols) != 1 {
+			t.Fatalf("min %s: want one connection policy, got %v", setting, server["tls_connection_policies"])
+		}
+		if got := pols[0].(map[string]any)["protocol_min"]; got != want {
+			t.Errorf("min %s: protocol_min = %v, want %q", setting, got, want)
+		}
+	}
+
+	// Bad value → treated as unset (no policy), never a malformed token.
+	opt := DefaultOptions()
+	opt.TLSMinVersion = "1.1"
+	if out, _ := Generate(Input{Services: services}, opt); strings.Contains(string(out), "tls_connection_policies") {
+		t.Error("unrecognized TLS min should emit no connection policy")
+	}
+}
+
+// Ward never sets default_sni: a handshake without SNI must have no cert to fall back
+// to, so it is refused (strict SNI). This is a security invariant — guard it directly.
+func TestGenerateStrictSNI(t *testing.T) {
+	services := []model.Service{
+		{ID: "1", PublicHostname: "internal.example.com", Upstreams: []string{"x:1"}, Enabled: true, TLSMode: "internal"},
+		{ID: "2", PublicHostname: "managed.example.com", Upstreams: []string{"x:1"}, Enabled: true, TLSMode: "managed"},
+	}
+	opt := DefaultOptions()
+	opt.TLSMinVersion = "1.3"
+	out, err := Generate(Input{Services: services}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "default_sni") {
+		t.Error("generated config must never set default_sni (breaks strict SNI)")
+	}
+	if strings.Contains(string(out), "fallback_sni") {
+		t.Error("generated config must never set fallback_sni (breaks strict SNI)")
+	}
+}

@@ -82,6 +82,7 @@ func (a *Applier) Apply(ctx context.Context) error {
 	opt.MetricsEnabled = a.store.MetricsEnabled(ctx, opt.MetricsEnabled)    // DB toggle (default off)
 	opt.LogLevel = a.store.LogLevel(ctx, opt.LogLevel)
 	opt.AccessLogErrorsOnly = a.store.AccessLogErrorsOnly(ctx, opt.AccessLogErrorsOnly)
+	opt.TLSMinVersion = a.store.TLSMinVersion(ctx, opt.TLSMinVersion)
 	cfg, err := Generate(Input{
 		Services:     services,
 		Exclusions:   exclusions,

@@ -36,7 +36,8 @@ func customRoot(dir string) string { return filepath.Join(dir, "custom") }
 // config-gen only (load_files); they never leave the process (json:"-").
 type Cert struct {
 	Domain    string    `json:"domain"`     // folder name = the host it secures
-	Subjects  []string  `json:"subjects"`   // CN + SANs parsed from the cert
+	Subjects  []string  `json:"subjects"`   // CN + DNS SANs parsed from the cert
+	IPSANs    []string  `json:"ip_sans,omitempty"` // IP address SANs — unreachable under strict SNI
 	NotAfter  time.Time `json:"not_after"`  // expiry
 	UpdatedAt time.Time `json:"updated_at"` // cert file mtime
 	CertPath  string    `json:"-"`
@@ -148,6 +149,7 @@ func certFromLeaf(dir, domain string, leaf *x509.Certificate) Cert {
 	c := Cert{
 		Domain:   domain,
 		Subjects: subjectsOf(leaf),
+		IPSANs:   ipSANsOf(leaf),
 		NotAfter: leaf.NotAfter,
 		CertPath: filepath.Join(folder, certFile),
 		KeyPath:  filepath.Join(folder, keyFile),
@@ -171,6 +173,17 @@ func subjectsOf(leaf *x509.Certificate) []string {
 	add(leaf.Subject.CommonName)
 	for _, n := range leaf.DNSNames {
 		add(n)
+	}
+	return out
+}
+
+// ipSANsOf returns the cert's IP address SANs as strings. Under Ward's strict SNI
+// (no default_sni) a client dialing by IP sends no SNI and is refused, so an IP SAN
+// can't actually be served — the API warns on upload.
+func ipSANsOf(leaf *x509.Certificate) []string {
+	out := []string{}
+	for _, ip := range leaf.IPAddresses {
+		out = append(out, ip.String())
 	}
 	return out
 }

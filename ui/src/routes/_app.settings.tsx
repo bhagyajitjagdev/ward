@@ -293,6 +293,7 @@ function TlsSection() {
   const { data, isLoading } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
   const [draft, setDraft] = useState<string | null>(null)
   const email = draft ?? data?.acme_email ?? ""
+  const minVer = data?.tls_min_version ?? "1.2"
   const save = useMutation({
     mutationFn: () => api.updateSettings({ acme_email: email.trim() }),
     onSuccess: (s) => {
@@ -301,6 +302,14 @@ function TlsSection() {
       toast.success("ACME email saved")
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save the email"),
+  })
+  const saveMin = useMutation({
+    mutationFn: (v: string) => api.updateSettings({ tls_min_version: v }),
+    onSuccess: (s) => {
+      qc.setQueryData(["settings"], s)
+      toast.success(`Minimum TLS set to ${s.tls_min_version}`)
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't change the TLS floor"),
   })
 
   return (
@@ -314,13 +323,34 @@ function TlsSection() {
       {isLoading ? (
         <Skeleton className="h-9 max-w-sm" />
       ) : (
-        <Input
-          className="max-w-sm font-mono"
-          type="email"
-          value={email}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="ops@acme.com"
-        />
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/80">ACME account email</div>
+            <Input
+              className="max-w-sm font-mono"
+              type="email"
+              value={email}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="ops@acme.com"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/80">Minimum TLS version</div>
+            <Select value={minVer} onValueChange={(v) => v !== minVer && saveMin.mutate(v)}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1.2">TLS 1.2</SelectItem>
+                <SelectItem value="1.3">TLS 1.3</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Edge-wide floor for TLS handshakes. Ward always enforces strict SNI — a client that
+              connects without a server name is refused.
+            </p>
+          </div>
+        </div>
       )}
     </Section>
   )

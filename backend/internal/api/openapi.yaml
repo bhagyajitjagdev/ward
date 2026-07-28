@@ -1029,6 +1029,7 @@ components:
         metrics_enabled: { type: boolean, description: Expose Prometheus metrics (per-host) at the internal admin /metrics. }
         log_level: { type: string, description: "Caddy's default logger level: DEBUG | INFO | WARN | ERROR." }
         access_log_errors_only: { type: boolean, description: Only write 5xx access-log entries (server errors). }
+        tls_min_version: { type: string, description: "Edge-wide minimum TLS version: 1.2 | 1.3." }
         edge_versions:
           type: object
           additionalProperties: { type: string }
@@ -1046,6 +1047,7 @@ components:
         metrics_enabled: { type: boolean }
         log_level: { type: string }
         access_log_errors_only: { type: boolean }
+        tls_min_version: { type: string }
 
     CrowdSecStatus:
       type: object
@@ -1079,8 +1081,13 @@ components:
         subjects:
           type: array
           items: { type: string }
+        ip_sans:
+          type: array
+          items: { type: string }
+          description: "IP-address SANs, if any. Unreachable under Ward's strict SNI."
         not_after: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        warning: { type: string, description: "Set on upload when the cert has caveats (e.g. IP SANs under strict SNI)." }
 
     CertificateInput:
       type: object

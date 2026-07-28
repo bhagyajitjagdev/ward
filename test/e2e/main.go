@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -62,6 +63,7 @@ func main() {
 	check("snapshot-export", checkSnapshotAndExport)
 	check("metrics", checkMetrics)
 	check("log-errors-only", checkLogErrorsOnly)
+	check("tls-hardening", checkTLSHardening)
 
 	if failures > 0 {
 		fmt.Printf("\n%d check(s) FAILED\n", failures)
@@ -620,6 +622,56 @@ func checkSnapshotAndExport() error {
 		if _, ok := exp[k]; !ok {
 			return fmt.Errorf("export missing %q", k)
 		}
+	}
+	return nil
+}
+
+func checkTLSHardening() error {
+	// Stand up a real HTTPS listener: an internal-CA service on :443, and raise the
+	// edge-wide floor to TLS 1.3. Then assert the three guarantees at the handshake
+	// level — the floor is enforced, and adding a connection policy hasn't relaxed
+	// strict SNI (a no-SNI handshake still has no cert to serve and is refused).
+	_, done, err := mkService(map[string]any{
+		"name": "tls.test", "public_hostnames": []string{"tls.test"},
+		"upstreams": []string{upstream}, "tls_mode": "internal",
+		"waf_enabled": false, "enabled": true,
+	})
+	if err != nil {
+		return err
+	}
+	defer done()
+	if st, b := api("PATCH", "/settings", map[string]any{"tls_min_version": "1.3"}); st != 200 {
+		return fmt.Errorf("set tls_min_version → %d %s", st, trim(string(b)))
+	}
+	defer api("PATCH", "/settings", map[string]any{"tls_min_version": "1.2"})
+
+	hostOnly, _, _ := net.SplitHostPort(strings.TrimPrefix(edgeURL, "http://"))
+	addr := net.JoinHostPort(hostOnly, "443")
+
+	// (1) SNI + TLS 1.3 → handshake succeeds (also waits out internal cert issuance).
+	if err := retry(20, 500*time.Millisecond, func() error {
+		conn, err := tls.Dial("tcp", addr, &tls.Config{
+			ServerName: "tls.test", InsecureSkipVerify: true, MinVersion: tls.VersionTLS13,
+		})
+		if err != nil {
+			return fmt.Errorf("TLS 1.3 handshake with SNI should succeed: %w", err)
+		}
+		conn.Close()
+		return nil
+	}); err != nil {
+		return err
+	}
+	// (2) Strict SNI: no server name → no cert to serve → handshake refused.
+	if conn, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true}); err == nil {
+		conn.Close()
+		return fmt.Errorf("a handshake without SNI must be refused (strict SNI), but it succeeded")
+	}
+	// (3) protocol_min: a client capped at TLS 1.2 is below the 1.3 floor → refused.
+	if conn, err := tls.Dial("tcp", addr, &tls.Config{
+		ServerName: "tls.test", InsecureSkipVerify: true, MaxVersion: tls.VersionTLS12,
+	}); err == nil {
+		conn.Close()
+		return fmt.Errorf("a TLS 1.2 handshake must be refused below the 1.3 floor, but it succeeded")
 	}
 	return nil
 }

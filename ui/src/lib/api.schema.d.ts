@@ -881,6 +881,8 @@ export interface components {
             log_level?: string;
             /** @description Only write 5xx access-log entries (server errors). */
             access_log_errors_only?: boolean;
+            /** @description Edge-wide minimum TLS version: 1.2 | 1.3. */
+            tls_min_version?: string;
             /** @description Read-only — versions of the components compiled into the ward-caddy image this release targets (component → version). Ground truth is the image's OCI labels. */
             edge_versions?: {
                 [key: string]: string;
@@ -896,6 +898,7 @@ export interface components {
             metrics_enabled?: boolean;
             log_level?: string;
             access_log_errors_only?: boolean;
+            tls_min_version?: string;
         };
         CrowdSecStatus: {
             /** @description LAPI URL + key present. */
@@ -923,10 +926,14 @@ export interface components {
             /** @description Storage name (label) — coverage comes from `subjects`. */
             domain: string;
             subjects: string[];
+            /** @description IP-address SANs, if any. Unreachable under Ward's strict SNI. */
+            ip_sans?: string[];
             /** Format: date-time */
             not_after: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Set on upload when the cert has caveats (e.g. IP SANs under strict SNI). */
+            warning?: string;
         };
         CertificateInput: {
             /** @description Optional label; auto-derived from the cert when empty. */

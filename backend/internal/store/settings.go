@@ -25,6 +25,7 @@ const (
 	MetricsEnabledKey  = "metrics.enabled"       // "1"/"0" — expose Prometheus metrics at the admin /metrics
 	LogLevelKey        = "log.level"             // Caddy default logger level: DEBUG|INFO|WARN|ERROR
 	AccessLogErrorsKey = "log.access_errors_only" // "1"/"0" — only log 5xx access entries
+	TLSMinVersionKey   = "tls.min_version"       // "1.2"|"1.3" — edge-wide TLS floor ("" → Caddy default 1.2)
 )
 
 // WAFEngineMode returns the global WAF engine-mode default, falling back to
@@ -96,6 +97,13 @@ func (s *Store) LogLevel(ctx context.Context, fallback string) string {
 func (s *Store) AccessLogErrorsOnly(ctx context.Context, fallback bool) bool {
 	if v, err := s.GetSetting(ctx, AccessLogErrorsKey); err == nil && v != "" {
 		return v == "1"
+	}
+	return fallback
+}
+
+func (s *Store) TLSMinVersion(ctx context.Context, fallback string) string {
+	if v, err := s.GetSetting(ctx, TLSMinVersionKey); err == nil && v != "" {
+		return v
 	}
 	return fallback
 }

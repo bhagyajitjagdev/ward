@@ -40,7 +40,7 @@ services:
       WARD_AUDIT_LOG: /shared/audit.log # Ward tails here
       WARD_ACCESS_LOG: /shared/access.json # Caddy writes the JSON access log here (for the log-controls check)
       WARD_AUDIT_INTERVAL_MS: "300"
-      WARD_CADDY_AUTO_HTTPS: "${WARD_AUTO_HTTPS:-}" # set WARD_AUTO_HTTPS=1 to test managed/internal TLS
+      WARD_CADDY_AUTO_HTTPS: "1" # HTTPS listener on :443 — internal-CA service + TLS-hardening check (none-mode services stay HTTP)
     volumes:
       - audit:/shared
     depends_on: [caddy, whoami, appserver]

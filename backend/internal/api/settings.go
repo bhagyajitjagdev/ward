@@ -22,6 +22,7 @@ type settingsDTO struct {
 	MetricsEnabled      *bool  `json:"metrics_enabled,omitempty"`  // expose Prometheus metrics at the admin /metrics
 	LogLevel            string `json:"log_level,omitempty"`             // Caddy default logger level: DEBUG|INFO|WARN|ERROR
 	AccessLogErrorsOnly *bool  `json:"access_log_errors_only,omitempty"` // only log 5xx access entries
+	TLSMinVersion       string `json:"tls_min_version,omitempty"`        // edge-wide TLS floor: "1.2" | "1.3"
 	// EdgeVersions is read-only: the components compiled into the ward-caddy image this
 	// release targets (component → version). Ground truth is the image's OCI labels.
 	EdgeVersions map[string]string `json:"edge_versions,omitempty"`
@@ -49,6 +50,7 @@ func (h *Handler) currentSettings(r *http.Request) settingsDTO {
 		MetricsEnabled:      &metricsEnabled,
 		LogLevel:            h.store.LogLevel(r.Context(), "INFO"),
 		AccessLogErrorsOnly: &accessErrorsOnly,
+		TLSMinVersion:       h.store.TLSMinVersion(r.Context(), "1.2"),
 		EdgeVersions:        edge.Versions(),
 	}
 }
@@ -165,6 +167,18 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.audit(r, "settings.update", store.AccessLogErrorsKey, val)
+		changed = true
+	}
+	if in.TLSMinVersion != "" {
+		if in.TLSMinVersion != "1.2" && in.TLSMinVersion != "1.3" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_min_version must be '1.2' or '1.3'"})
+			return
+		}
+		if err := h.store.SetSetting(r.Context(), store.TLSMinVersionKey, in.TLSMinVersion); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.audit(r, "settings.update", store.TLSMinVersionKey, in.TLSMinVersion)
 		changed = true
 	}
 	if !changed {

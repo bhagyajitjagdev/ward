@@ -27,6 +27,7 @@ type Options struct {
 	AccessLogPath    string // where Caddy writes the JSON access log (empty → access logging off)
 	LogLevel         string // Caddy's default logger level: DEBUG|INFO|WARN|ERROR (empty → Caddy default INFO)
 	AccessLogErrorsOnly bool // only log 5xx access entries (set the access logger's level to ERROR)
+	TLSMinVersion    string // edge-wide minimum TLS version: "1.2"|"1.3" (empty → Caddy default 1.2)
 	CrowdSecEnabled  bool   // wire the CrowdSec bouncer into the edge
 	CrowdSecAPIURL   string // LAPI base URL, e.g. http://crowdsec:8080/
 	CrowdSecAPIKey   string // bouncer API key registered with LAPI
@@ -334,6 +335,13 @@ func Generate(in Input, opt Options) ([]byte, error) {
 				tlsApp["certificates"] = map[string]any{"load_files": loadFiles}
 			}
 		}
+	}
+
+	// Edge-wide TLS floor. A connection policy with no matcher applies to every
+	// handshake on the HTTPS listener; it deliberately sets no default_sni/fallback,
+	// so strict SNI holds — a handshake without SNI has no cert to serve and is refused.
+	if v := tlsProtocolMin(opt.TLSMinVersion); v != "" {
+		server["tls_connection_policies"] = []any{map[string]any{"protocol_min": v}}
 	}
 
 	httpApp := map[string]any{"servers": map[string]any{"edge": server}}
@@ -850,6 +858,19 @@ func orStr(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// tlsProtocolMin maps a "1.2"/"1.3" setting to Caddy's protocol_min token, or ""
+// for anything else (unset/unrecognized → Caddy's built-in default of tls1.2).
+func tlsProtocolMin(v string) string {
+	switch strings.TrimSpace(v) {
+	case "1.2":
+		return "tls1.2"
+	case "1.3":
+		return "tls1.3"
+	default:
+		return ""
+	}
 }
 
 func wafHandler(opt Options, mode string, exclusions []string) map[string]any {

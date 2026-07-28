@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/bhagyajitjagdev/ward/backend/internal/certs"
 )
@@ -48,7 +49,15 @@ func (h *Handler) uploadCertificate(w http.ResponseWriter, r *http.Request) {
 	// A tls_mode=custom service on this domain now serves the uploaded cert.
 	h.reconcile(r.Context())
 	h.audit(r, "cert.upload", "cert:"+c.Domain, c.NotAfter.Format("2006-01-02"))
-	writeJSON(w, http.StatusCreated, c)
+	resp := struct {
+		certs.Cert
+		Warning string `json:"warning,omitempty"`
+	}{Cert: c}
+	if len(c.IPSANs) > 0 {
+		resp.Warning = "certificate carries IP address SANs (" + strings.Join(c.IPSANs, ", ") +
+			"). Ward enforces strict SNI, so clients that connect by IP send no SNI and are refused — reach this service by hostname."
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (h *Handler) deleteCertificate(w http.ResponseWriter, r *http.Request) {
