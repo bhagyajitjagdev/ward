@@ -25,6 +25,8 @@ type Options struct {
 	ACMEEmail        string // contact email for managed (Let's Encrypt) certs
 	GeoIPDBPath      string // path to the GeoIP .mmdb for the geo matcher (empty → geo blocking off)
 	AccessLogPath    string // where Caddy writes the JSON access log (empty → access logging off)
+	LogLevel         string // Caddy's default logger level: DEBUG|INFO|WARN|ERROR (empty → Caddy default INFO)
+	AccessLogErrorsOnly bool // only log 5xx access entries (set the access logger's level to ERROR)
 	CrowdSecEnabled  bool   // wire the CrowdSec bouncer into the edge
 	CrowdSecAPIURL   string // LAPI base URL, e.g. http://crowdsec:8080/
 	CrowdSecAPIKey   string // bouncer API key registered with LAPI
@@ -360,17 +362,33 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		"admin": map[string]any{"listen": opt.AdminListen},
 		"apps":  apps,
 	}
+	logs := map[string]any{}
+	defaultLogger := map[string]any{}
+	if opt.LogLevel != "" {
+		defaultLogger["level"] = opt.LogLevel
+	}
 	if opt.AccessLogPath != "" {
 		// Route access logs to a JSON file (tailed by Ward + any external pipeline);
 		// keep them out of the default (stderr) log.
-		cfg["logging"] = map[string]any{"logs": map[string]any{
-			"default": map[string]any{"exclude": []string{"http.log.access"}},
-			"access": map[string]any{
-				"writer":  map[string]any{"output": "file", "filename": opt.AccessLogPath},
-				"encoder": map[string]any{"format": "json"},
-				"include": []string{"http.log.access"},
-			},
-		}}
+		defaultLogger["exclude"] = []string{"http.log.access"}
+		access := map[string]any{
+			"writer":  map[string]any{"output": "file", "filename": opt.AccessLogPath},
+			"encoder": map[string]any{"format": "json"},
+			"include": []string{"http.log.access"},
+		}
+		if opt.AccessLogErrorsOnly {
+			// Caddy logs a request at ERROR when the status is 5xx, lower otherwise — so an
+			// ERROR-level access logger writes only server errors. (Full 4xx+5xx filtering
+			// isn't expressible in Caddy core; use the log pipeline for that.)
+			access["level"] = "ERROR"
+		}
+		logs["access"] = access
+	}
+	if len(defaultLogger) > 0 {
+		logs["default"] = defaultLogger
+	}
+	if len(logs) > 0 {
+		cfg["logging"] = map[string]any{"logs": logs}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }

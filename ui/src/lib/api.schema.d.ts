@@ -877,6 +877,10 @@ export interface components {
             crowdsec_configured?: boolean;
             /** @description Expose Prometheus metrics (per-host) at the internal admin /metrics. */
             metrics_enabled?: boolean;
+            /** @description Caddy's default logger level: DEBUG | INFO | WARN | ERROR. */
+            log_level?: string;
+            /** @description Only write 5xx access-log entries (server errors). */
+            access_log_errors_only?: boolean;
             /** @description Read-only — versions of the components compiled into the ward-caddy image this release targets (component → version). Ground truth is the image's OCI labels. */
             edge_versions?: {
                 [key: string]: string;
@@ -890,6 +894,8 @@ export interface components {
             waf_retention_days?: number;
             crowdsec_enabled?: boolean;
             metrics_enabled?: boolean;
+            log_level?: string;
+            access_log_errors_only?: boolean;
         };
         CrowdSecStatus: {
             /** @description LAPI URL + key present. */

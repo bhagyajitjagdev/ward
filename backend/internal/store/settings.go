@@ -23,6 +23,8 @@ const (
 	WAFRetentionKey    = "waf.retention_days"    // how long to keep WAF detections
 	CrowdSecEnabledKey = "crowdsec.enabled"      // "1"/"0" — wire the CrowdSec bouncer into the edge
 	MetricsEnabledKey  = "metrics.enabled"       // "1"/"0" — expose Prometheus metrics at the admin /metrics
+	LogLevelKey        = "log.level"             // Caddy default logger level: DEBUG|INFO|WARN|ERROR
+	AccessLogErrorsKey = "log.access_errors_only" // "1"/"0" — only log 5xx access entries
 )
 
 // WAFEngineMode returns the global WAF engine-mode default, falling back to
@@ -79,6 +81,20 @@ func (s *Store) CrowdSecEnabled(ctx context.Context, fallback bool) bool {
 
 func (s *Store) MetricsEnabled(ctx context.Context, fallback bool) bool {
 	if v, err := s.GetSetting(ctx, MetricsEnabledKey); err == nil && v != "" {
+		return v == "1"
+	}
+	return fallback
+}
+
+func (s *Store) LogLevel(ctx context.Context, fallback string) string {
+	if v, err := s.GetSetting(ctx, LogLevelKey); err == nil && v != "" {
+		return v
+	}
+	return fallback
+}
+
+func (s *Store) AccessLogErrorsOnly(ctx context.Context, fallback bool) bool {
+	if v, err := s.GetSetting(ctx, AccessLogErrorsKey); err == nil && v != "" {
 		return v == "1"
 	}
 	return fallback

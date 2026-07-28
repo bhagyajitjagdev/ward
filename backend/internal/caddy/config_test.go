@@ -270,6 +270,26 @@ func TestGenerateSpecificBeforeWildcard(t *testing.T) {
 	}
 }
 
+func TestGenerateLogControls(t *testing.T) {
+	opt := DefaultOptions()
+	opt.LogLevel = "DEBUG"
+	opt.AccessLogPath = "/waf/access.json"
+	opt.AccessLogErrorsOnly = true
+	out, err := Generate(Input{Services: []model.Service{
+		{ID: "s", Name: "a", PublicHostname: "a.example.com", Upstreams: []string{"a:80"}, TLSMode: "none", Enabled: true},
+	}}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	// default logger at the chosen level; access logger at ERROR (5xx-only).
+	for _, want := range []string{`"level": "DEBUG"`, `"level": "ERROR"`, "http.log.access"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("log config missing %q", want)
+		}
+	}
+}
+
 func TestGenerateMultiHostname(t *testing.T) {
 	services := []model.Service{
 		{ID: "s1", Name: "api", PublicHostname: "api.example.com",

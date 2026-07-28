@@ -38,6 +38,7 @@ services:
       WARD_CADDY_ADMIN: http://caddy:2019
       WARD_WAF_AUDIT_LOG: /shared/audit.log # Coraza writes here (generated config)
       WARD_AUDIT_LOG: /shared/audit.log # Ward tails here
+      WARD_ACCESS_LOG: /shared/access.json # Caddy writes the JSON access log here (for the log-controls check)
       WARD_AUDIT_INTERVAL_MS: "300"
       WARD_CADDY_AUTO_HTTPS: "${WARD_AUTO_HTTPS:-}" # set WARD_AUTO_HTTPS=1 to test managed/internal TLS
     volumes:
@@ -56,6 +57,7 @@ services:
       UPSTREAM: appserver:8080
     volumes:
       - ./:/src:ro
+      - audit:/shared:ro # read Caddy's access log for the log-controls check
     command: go run ./e2e
     depends_on: [caddy, ward, appserver]
 

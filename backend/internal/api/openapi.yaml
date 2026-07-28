@@ -1027,6 +1027,8 @@ components:
         crowdsec_enabled: { type: boolean, description: Whether the CrowdSec bouncer is wired into the edge. }
         crowdsec_configured: { type: boolean, description: Read-only — LAPI URL + key are set in the deployment. }
         metrics_enabled: { type: boolean, description: Expose Prometheus metrics (per-host) at the internal admin /metrics. }
+        log_level: { type: string, description: "Caddy's default logger level: DEBUG | INFO | WARN | ERROR." }
+        access_log_errors_only: { type: boolean, description: Only write 5xx access-log entries (server errors). }
         edge_versions:
           type: object
           additionalProperties: { type: string }
@@ -1042,6 +1044,8 @@ components:
         waf_retention_days: { type: integer, minimum: 1, maximum: 365 }
         crowdsec_enabled: { type: boolean }
         metrics_enabled: { type: boolean }
+        log_level: { type: string }
+        access_log_errors_only: { type: boolean }
 
     CrowdSecStatus:
       type: object

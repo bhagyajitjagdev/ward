@@ -61,6 +61,7 @@ func main() {
 	check("snapshots", checkSnapshots)
 	check("snapshot-export", checkSnapshotAndExport)
 	check("metrics", checkMetrics)
+	check("log-errors-only", checkLogErrorsOnly)
 
 	if failures > 0 {
 		fmt.Printf("\n%d check(s) FAILED\n", failures)
@@ -520,6 +521,44 @@ func checkEdgeVersions() error {
 		return fmt.Errorf("settings.edge_versions.caddy is empty")
 	}
 	return nil
+}
+
+func checkLogErrorsOnly() error {
+	// With errors-only on, a 2xx request must NOT be written to the access log, but a
+	// 5xx must — validates Caddy's status→level mapping (5xx = ERROR).
+	if st, b := api("PATCH", "/settings", map[string]any{"access_log_errors_only": true}); st != 200 {
+		return fmt.Errorf("enable errors-only → %d %s", st, trim(string(b)))
+	}
+	defer api("PATCH", "/settings", map[string]any{"access_log_errors_only": false})
+	_, dOK, err := mkService(hostSpec("logok.test", upstream)) // 200
+	if err != nil {
+		return err
+	}
+	defer dOK()
+	_, dErr, err := mkService(hostSpec("logerr.test", "127.0.0.1:9")) // dead → 502
+	if err != nil {
+		return err
+	}
+	defer dErr()
+	time.Sleep(500 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		edge("GET", "logok.test", "/", nil, "")
+		edge("GET", "logerr.test", "/", nil, "")
+	}
+	return retry(12, 400*time.Millisecond, func() error {
+		b, err := os.ReadFile("/shared/access.json")
+		if err != nil {
+			return err
+		}
+		s := string(b)
+		if !strings.Contains(s, "logerr.test") {
+			return fmt.Errorf("5xx access entry (logerr.test) not logged yet")
+		}
+		if strings.Contains(s, "logok.test") {
+			return fmt.Errorf("2xx entry (logok.test) should have been filtered out by errors-only")
+		}
+		return nil
+	})
 }
 
 func checkMetrics() error {

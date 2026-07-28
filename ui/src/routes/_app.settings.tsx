@@ -41,6 +41,8 @@ function SettingsPage() {
 
         <MetricsSection />
 
+        <LoggingSection />
+
         <ExportSection />
 
         <Section title="Appearance" description="Theme for this browser.">
@@ -137,6 +139,54 @@ function RulesetSection() {
 // ships. Read-only — they move together with the Ward version. Values come from the
 // image's pinned build (kept in lockstep with caddy/Dockerfile); the authoritative
 // source for a running image is `docker inspect` (its OCI labels).
+function LoggingSection() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })
+  const level = data?.log_level ?? "INFO"
+  const errorsOnly = data?.access_log_errors_only ?? false
+  const save = useMutation({
+    mutationFn: (patch: { log_level?: string; access_log_errors_only?: boolean }) => api.updateSettings(patch),
+    onSuccess: (s) => {
+      qc.setQueryData(["settings"], s)
+      toast.success("Logging updated")
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't update logging"),
+  })
+  return (
+    <Section
+      title="Logging"
+      description="The edge's log verbosity, and an option to write only server errors (5xx) to the access log. Full 4xx+5xx filtering isn't possible in Caddy — filter in Loki/Grafana instead."
+    >
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/80">Log level</div>
+          <Select value={level} onValueChange={(v) => v !== level && save.mutate({ log_level: v })}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {["DEBUG", "INFO", "WARN", "ERROR"].map((l) => (
+                <SelectItem key={l} value={l}>
+                  {l}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={errorsOnly}
+            onChange={(e) => save.mutate({ access_log_errors_only: e.target.checked })}
+          />
+          Access log: only server errors (5xx)
+        </label>
+      </div>
+    </Section>
+  )
+}
+
 function MetricsSection() {
   const qc = useQueryClient()
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: api.getSettings })

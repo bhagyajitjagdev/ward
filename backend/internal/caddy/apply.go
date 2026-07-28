@@ -80,6 +80,8 @@ func (a *Applier) Apply(ctx context.Context) error {
 	opt.ACMEEmail = a.store.ACMEEmail(ctx, opt.ACMEEmail)
 	opt.CrowdSecEnabled = a.store.CrowdSecEnabled(ctx, opt.CrowdSecEnabled) // DB toggle over the env default (URL+key stay env)
 	opt.MetricsEnabled = a.store.MetricsEnabled(ctx, opt.MetricsEnabled)    // DB toggle (default off)
+	opt.LogLevel = a.store.LogLevel(ctx, opt.LogLevel)
+	opt.AccessLogErrorsOnly = a.store.AccessLogErrorsOnly(ctx, opt.AccessLogErrorsOnly)
 	cfg, err := Generate(Input{
 		Services:     services,
 		Exclusions:   exclusions,

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strconv"
+	"strings"
 
 	"github.com/bhagyajitjagdev/ward/backend/internal/edge"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
@@ -19,6 +20,8 @@ type settingsDTO struct {
 	CrowdSecEnabled     *bool  `json:"crowdsec_enabled,omitempty"` // toggle the bouncer (pointer: distinguishes omitted from false on PATCH)
 	CrowdSecConfigured  bool   `json:"crowdsec_configured"`        // read-only: LAPI URL + key present (env)
 	MetricsEnabled      *bool  `json:"metrics_enabled,omitempty"`  // expose Prometheus metrics at the admin /metrics
+	LogLevel            string `json:"log_level,omitempty"`             // Caddy default logger level: DEBUG|INFO|WARN|ERROR
+	AccessLogErrorsOnly *bool  `json:"access_log_errors_only,omitempty"` // only log 5xx access entries
 	// EdgeVersions is read-only: the components compiled into the ward-caddy image this
 	// release targets (component → version). Ground truth is the image's OCI labels.
 	EdgeVersions map[string]string `json:"edge_versions,omitempty"`
@@ -34,6 +37,7 @@ func (h *Handler) currentSettings(r *http.Request) settingsDTO {
 	configured := h.crowdsec != nil
 	csEnabled := h.store.CrowdSecEnabled(r.Context(), configured)
 	metricsEnabled := h.store.MetricsEnabled(r.Context(), false)
+	accessErrorsOnly := h.store.AccessLogErrorsOnly(r.Context(), false)
 	return settingsDTO{
 		WAFEngineMode:       h.store.WAFEngineMode(r.Context(), "DetectionOnly"),
 		ACMEEmail:           h.store.ACMEEmail(r.Context(), ""),
@@ -43,6 +47,8 @@ func (h *Handler) currentSettings(r *http.Request) settingsDTO {
 		CrowdSecEnabled:     &csEnabled,
 		CrowdSecConfigured:  configured,
 		MetricsEnabled:      &metricsEnabled,
+		LogLevel:            h.store.LogLevel(r.Context(), "INFO"),
+		AccessLogErrorsOnly: &accessErrorsOnly,
 		EdgeVersions:        edge.Versions(),
 	}
 }
@@ -134,6 +140,31 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.audit(r, "settings.update", store.MetricsEnabledKey, val)
+		changed = true
+	}
+	if in.LogLevel != "" {
+		lvl := strings.ToUpper(in.LogLevel)
+		if lvl != "DEBUG" && lvl != "INFO" && lvl != "WARN" && lvl != "ERROR" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "log_level must be DEBUG, INFO, WARN or ERROR"})
+			return
+		}
+		if err := h.store.SetSetting(r.Context(), store.LogLevelKey, lvl); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.audit(r, "settings.update", store.LogLevelKey, lvl)
+		changed = true
+	}
+	if in.AccessLogErrorsOnly != nil {
+		val := "0"
+		if *in.AccessLogErrorsOnly {
+			val = "1"
+		}
+		if err := h.store.SetSetting(r.Context(), store.AccessLogErrorsKey, val); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.audit(r, "settings.update", store.AccessLogErrorsKey, val)
 		changed = true
 	}
 	if !changed {
