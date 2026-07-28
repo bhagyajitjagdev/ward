@@ -35,7 +35,7 @@ function NewServicePage() {
   })
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="mx-auto max-w-6xl space-y-8">
       <div className="space-y-4">
         <Link
           to="/services"
