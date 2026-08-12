@@ -2,11 +2,11 @@ import { useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Ban, Trash2, Pencil, AlertTriangle } from "lucide-react"
+import { Ban, Trash2, Pencil, AlertTriangle, ShieldCheck } from "lucide-react"
 import { PageHeader, StatusDot, Mono, ago, until, ModeBadge, ModeToggle } from "@/components/console"
 import type { RuleMode } from "@/components/console"
 import { api, ApiError } from "@/lib/api"
-import type { Block } from "@/lib/api"
+import type { Block, TrustedIP } from "@/lib/api"
 import { useServices, useServiceNames } from "@/data/queries"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -161,10 +161,172 @@ function BlocklistPage() {
         </table>
       </div>
 
+      <TrustedIPs />
+
       <CrowdSecDecisions />
 
       <BlockDialog open={dialog.open} editing={dialog.editing} onOpenChange={(o) => setDialog((d) => ({ ...d, open: o }))} />
     </div>
+  )
+}
+
+// TrustedIPs lists addresses exempt from every edge protection — the opposite of the
+// blocklist. A trusted IP is never blocked by CrowdSec, the blocklist, the WAF, rate
+// limits, or geo (auth + the proxy still apply). Sits above the CrowdSec decisions so
+// all IP controls stay on one page.
+function TrustedIPs() {
+  const qc = useQueryClient()
+  const { data: trusted, isLoading } = useQuery({ queryKey: ["trusted"], queryFn: api.listTrusted })
+  const [open, setOpen] = useState(false)
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteTrusted(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trusted"] })
+      toast.success("Removed from trusted")
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't remove"),
+  })
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="flex items-center gap-2">
+        <h2 className="font-heading text-sm font-semibold">Trusted IPs</h2>
+        {trusted && trusted.length > 0 && (
+          <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{trusted.length}</span>
+        )}
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">· never blocked</span>
+        <Button size="sm" variant="outline" className="ml-auto" onClick={() => setOpen(true)}>
+          <ShieldCheck className="size-4" /> Add trusted IP
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Addresses here bypass CrowdSec, the blocklist, the WAF, rate-limits, and geo blocking — they can never be blocked at the
+        edge. Authentication and the proxy still apply.
+      </p>
+      <div className="overflow-hidden rounded-xl border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/30 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+              <th className="px-4 py-2.5 font-medium">IP / CIDR</th>
+              <th className="px-4 py-2.5 font-medium">Note</th>
+              <th className="px-4 py-2.5 font-medium">Added</th>
+              <th className="w-10" />
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {isLoading && (
+              <tr>
+                <td colSpan={4} className="px-4 py-3.5">
+                  <Skeleton className="h-6 w-full" />
+                </td>
+              </tr>
+            )}
+            {trusted?.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
+                  No trusted IPs. Add one to exempt it from all edge protection.
+                </td>
+              </tr>
+            )}
+            {trusted?.map((t) => (
+              <tr key={t.id} className="group transition-colors hover:bg-muted/40">
+                <td className="px-4 py-3">
+                  <Mono className="font-medium">{t.cidr}</Mono>
+                </td>
+                <td className="max-w-[320px] px-4 py-3">
+                  <span className="block truncate text-muted-foreground">{t.note || "—"}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <Mono dim className="!text-xs">
+                    {ago(t.created_at)}
+                  </Mono>
+                </td>
+                <td className="pr-3">
+                  <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-red-500"
+                      aria-label="Remove trusted IP"
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate(t.id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <TrustedDialog open={open} onOpenChange={setOpen} />
+    </div>
+  )
+}
+
+function TrustedDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const qc = useQueryClient()
+  const [cidr, setCidr] = useState("")
+  const [note, setNote] = useState("")
+  useEffect(() => {
+    if (open) {
+      setCidr("")
+      setNote("")
+    }
+  }, [open])
+  const save = useMutation({
+    mutationFn: () => api.createTrusted({ cidr: cidr.trim(), note: note.trim() || undefined }),
+    onSuccess: (t: TrustedIP) => {
+      qc.invalidateQueries({ queryKey: ["trusted"] })
+      toast.success(`Trusting ${t.cidr}`)
+      onOpenChange(false)
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't add the trusted IP"),
+  })
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add trusted IP</DialogTitle>
+          <DialogDescription>
+            Exempt an IP or CIDR from every edge protection — CrowdSec, the blocklist, the WAF, rate-limits, and geo. It can
+            never be blocked.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="trust-cidr">IP or CIDR</Label>
+            <Input
+              id="trust-cidr"
+              className="font-mono"
+              placeholder="49.43.240.236 or 10.0.0.0/8"
+              value={cidr}
+              onChange={(e) => setCidr(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="trust-note">
+              Note <span className="font-normal text-muted-foreground">— optional</span>
+            </Label>
+            <Input
+              id="trust-note"
+              placeholder="office VPN, monitoring, a teammate…"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={!cidr.trim() || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? "Adding…" : "Add trusted IP"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

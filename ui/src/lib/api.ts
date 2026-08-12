@@ -77,6 +77,8 @@ export type WafCustomRule = S["WafCustomRule"]
 export type WafCustomRuleInput = S["WafCustomRuleInput"]
 export type Block = S["Block"]
 export type BlockInput = S["BlockInput"]
+export type TrustedIP = S["TrustedIP"]
+export type TrustedIPInput = S["TrustedIPInput"]
 export type RateLimit = S["RateLimit"]
 export type RateLimitInput = S["RateLimitInput"]
 export type GeoRule = S["GeoRule"]
@@ -144,6 +146,11 @@ export const api = {
   updateBlock: (id: string, input: BlockInput) =>
     client.PATCH("/blocklist/{id}", { params: { path: { id } }, body: input }).then(unwrap),
   deleteBlock: (id: string) => client.DELETE("/blocklist/{id}", { params: { path: { id } } }).then(unwrap),
+
+  // trusted IPs (exempt from every edge protection)
+  listTrusted: () => client.GET("/trusted-ips").then(unwrap),
+  createTrusted: (input: TrustedIPInput) => client.POST("/trusted-ips", { body: input }).then(unwrap),
+  deleteTrusted: (id: string) => client.DELETE("/trusted-ips/{id}", { params: { path: { id } } }).then(unwrap),
 
   // rate limits
   listRateLimits: () => client.GET("/rate-limits").then(unwrap),

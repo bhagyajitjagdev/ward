@@ -506,6 +506,44 @@ paths:
         "204": { description: Deleted }
         default: { $ref: "#/components/responses/Error" }
 
+  /trusted-ips:
+    get:
+      operationId: listTrustedIPs
+      summary: List trusted IPs (exempt from all edge protections)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TrustedIP" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createTrustedIP
+      summary: Add a trusted IP/CIDR (reconciles the edge)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrustedIPInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrustedIP" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /trusted-ips/{id}:
+    delete:
+      operationId: deleteTrustedIP
+      summary: Remove a trusted IP (reconciles the edge)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
+
   /rate-limits:
     get:
       operationId: listRateLimits
@@ -1264,6 +1302,23 @@ components:
         service_id: { type: string, nullable: true }
         reason: { type: string }
         expires_at: { type: string, format: date-time, nullable: true }
+
+    TrustedIP:
+      type: object
+      description: An IP/CIDR exempt from every edge threat protection (CrowdSec, IP blocklist, WAF, rate-limits, geo). Global.
+      required: [id, cidr, created_at]
+      properties:
+        id: { type: string }
+        cidr: { type: string }
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+
+    TrustedIPInput:
+      type: object
+      required: [cidr]
+      properties:
+        cidr: { type: string }
+        note: { type: string }
 
     RateLimit:
       type: object

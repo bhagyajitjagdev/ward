@@ -74,6 +74,10 @@ func (a *Applier) Apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	trusted, err := a.store.ListTrusted(ctx)
+	if err != nil {
+		return err
+	}
 	opt := a.opt
 	opt.GeoIPDBPath = geoip.ActivePath(geoip.Dir())                   // pick up a newly added/removed DB
 	opt.WAFEngineMode = a.store.WAFEngineMode(ctx, opt.WAFEngineMode) // DB setting overrides the env/compiled default
@@ -90,6 +94,7 @@ func (a *Applier) Apply(ctx context.Context) error {
 		Blocks:       blocks,
 		RateLimits:   rateLimits,
 		GeoRules:     geoRules,
+		Trusted:      trusted,
 		Certificates: ResolveCustomCerts(),
 		RawRoutes:    AdaptRawRoutes(services),
 	}, opt)

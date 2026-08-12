@@ -447,6 +447,49 @@ func TestGenerateExclusionSecLang(t *testing.T) {
 	}
 }
 
+func TestGenerateTrustedBypass(t *testing.T) {
+	services := []model.Service{
+		{ID: "s", Name: "a", PublicHostname: "a.example.com", Upstreams: []string{"x:1"}, Enabled: true, TLSMode: "none", WAFEnabled: true, WAFMode: "On"},
+	}
+	blocks := []model.BlockedIP{{ID: "b", Scope: "global", Mode: "block", CIDR: "0.0.0.0/0"}}
+	opt := DefaultOptions()
+	opt.CrowdSecEnabled = true
+	opt.CrowdSecAPIURL = "http://crowdsec:8080/"
+	opt.CrowdSecAPIKey = "k"
+
+	// No trusted IPs → the trusted matcher must not appear anywhere (structure preserved).
+	out, err := Generate(Input{Services: services, Blocks: blocks}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "9.9.9.9") {
+		t.Error("no trusted IPs configured → no trusted matcher should be emitted")
+	}
+	// The crowdsec front route must have no matcher when nothing is trusted.
+	var cfg map[string]any
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	front := cfg["apps"].(map[string]any)["http"].(map[string]any)["servers"].(map[string]any)["edge"].(map[string]any)["routes"].([]any)[0].(map[string]any)
+	if _, hasMatch := front["match"]; hasMatch {
+		t.Error("crowdsec front route should have no matcher without trusted IPs")
+	}
+
+	// With a trusted IP, it guards every threat protection — crowdsec, the IP deny, and
+	// the WAF — so it appears multiple times as a not-remote_ip guard.
+	out, err = Generate(Input{Services: services, Blocks: blocks, Trusted: []model.TrustedIP{{CIDR: "9.9.9.9"}}}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if n := strings.Count(s, "9.9.9.9"); n < 3 {
+		t.Errorf("trusted IP should guard crowdsec + deny + WAF (≥3 occurrences), got %d", n)
+	}
+	if !strings.Contains(s, `"ranges"`) || !strings.Contains(s, `"not"`) {
+		t.Error("trusted guard should render as a not{remote_ip{ranges}} matcher")
+	}
+}
+
 func TestGenerateWithBlocks(t *testing.T) {
 	services := []model.Service{
 		{ID: "svc1", Name: "app", PublicHostname: "app.example.com", Upstreams: []string{"app:80"}, Enabled: true},

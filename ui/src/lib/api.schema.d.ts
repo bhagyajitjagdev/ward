@@ -456,6 +456,41 @@ export interface paths {
         patch: operations["updateBlock"];
         trace?: never;
     };
+    "/trusted-ips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List trusted IPs (exempt from all edge protections) */
+        get: operations["listTrustedIPs"];
+        put?: never;
+        /** Add a trusted IP/CIDR (reconciles the edge) */
+        post: operations["createTrustedIP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trusted-ips/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a trusted IP (reconciles the edge) */
+        delete: operations["deleteTrustedIP"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rate-limits": {
         parameters: {
             query?: never;
@@ -1080,6 +1115,18 @@ export interface components {
             reason?: string;
             /** Format: date-time */
             expires_at?: string | null;
+        };
+        /** @description An IP/CIDR exempt from every edge threat protection (CrowdSec, IP blocklist, WAF, rate-limits, geo). Global. */
+        TrustedIP: {
+            id: string;
+            cidr: string;
+            note?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        TrustedIPInput: {
+            cidr: string;
+            note?: string;
         };
         RateLimit: {
             id: string;
@@ -2060,6 +2107,73 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Block"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listTrustedIPs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrustedIP"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createTrustedIP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustedIPInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrustedIP"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteTrustedIP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

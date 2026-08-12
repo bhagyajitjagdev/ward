@@ -50,6 +50,7 @@ func main() {
 	check("skip-paths-ws", checkSkipWS)
 	check("skip-paths-still-block", checkSkipStillBlocks)
 	check("ip-blocklist", checkIPBlock)
+	check("trusted-ip-bypass", checkTrustedBypass)
 	check("rate-limit", checkRateLimit)
 	check("http-security-headers", checkSecurityHeaders)
 	check("http-add-remove-header", checkAddRemoveHeader)
@@ -341,6 +342,72 @@ func checkIPBlock() error {
 		}
 		return nil
 	})
+}
+
+func checkTrustedBypass() error {
+	// A trusted IP is exempt from every protection. Set up a service with the WAF on and
+	// an IP block of everyone; the tester is blocked. Trust the tester's IP → it must now
+	// bypass both the block and the WAF.
+	ip := myIP()
+	if ip == "" {
+		return fmt.Errorf("could not determine tester source IP")
+	}
+	sid, done, err := mkService(svcSpec("trust.test", true, "On"))
+	if err != nil {
+		return err
+	}
+	defer done()
+	st, bb := api("POST", "/blocklist", map[string]any{
+		"cidr": "0.0.0.0/0", "scope": "service", "service_id": sid, "mode": "block",
+	})
+	if st != 201 {
+		return fmt.Errorf("create block → %d %s", st, trim(string(bb)))
+	}
+	var blk map[string]any
+	_ = json.Unmarshal(bb, &blk)
+	// Precondition: blocked.
+	if err := retry(15, 300*time.Millisecond, func() error {
+		if s, _ := edge("GET", "trust.test", "/", nil, ""); s != 403 {
+			return fmt.Errorf("precondition: should be blocked, got %d", s)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	// Trust the tester's IP.
+	tst, tb := api("POST", "/trusted-ips", map[string]any{"cidr": ip + "/32", "note": "e2e"})
+	if tst != 201 {
+		return fmt.Errorf("create trusted → %d %s", tst, trim(string(tb)))
+	}
+	var tr map[string]any
+	_ = json.Unmarshal(tb, &tr)
+	defer api("DELETE", "/trusted-ips/"+fmt.Sprint(tr["id"]), nil)
+	defer api("DELETE", "/blocklist/"+fmt.Sprint(blk["id"]), nil)
+	// Now the block AND the WAF are bypassed for the trusted IP.
+	return retry(15, 300*time.Millisecond, func() error {
+		s1, body := edge("GET", "trust.test", "/", nil, "")            // block bypassed → reaches upstream
+		s2, _ := edge("GET", "trust.test", "/query?q="+sqli, nil, "")  // WAF bypassed → not 403
+		if s1 != 200 || !strings.Contains(body, "wardtest-upstream") {
+			return fmt.Errorf("trusted IP should bypass the block, got %d %q", s1, trim(body))
+		}
+		if s2 != 200 {
+			return fmt.Errorf("trusted IP should bypass the WAF (SQLi allowed), got %d", s2)
+		}
+		return nil
+	})
+}
+
+// myIP returns the tester's source IP as Caddy sees it (the direct connection peer).
+func myIP() string {
+	c, err := net.Dial("tcp", strings.TrimPrefix(edgeURL, "http://"))
+	if err != nil {
+		return ""
+	}
+	defer c.Close()
+	if a, ok := c.LocalAddr().(*net.TCPAddr); ok {
+		return a.IP.String()
+	}
+	return ""
 }
 
 func checkRateLimit() error {

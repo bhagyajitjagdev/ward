@@ -129,6 +129,10 @@ type Input struct {
 	Blocks       []model.BlockedIP
 	RateLimits   []model.RateLimit
 	GeoRules     []model.GeoRule
+	// Trusted IPs/CIDRs are exempt from every threat protection below (CrowdSec, IP
+	// blocklist, WAF, rate-limits, geo) — a `not remote_ip` guard is folded into each
+	// protection matcher so those handlers simply don't run for trusted clients.
+	Trusted      []model.TrustedIP
 	Certificates []CustomCert
 	// RawRoutes holds pre-adapted Caddy route objects (from a service's raw_caddy
 	// Caddyfile fragment) keyed by service id — spliced into that service's route.
@@ -214,21 +218,23 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		}
 	}
 
+	trusted := trustedCIDRs(in.Trusted) // clients exempt from every threat protection below
 	var internalSubs, managedSubs, skipSubs, customSubs []string
 	routes := make([]any, 0, len(services)*2+4)
 	if crowdsecOn(opt) {
-		// First in the chain: drop IPs CrowdSec has decided to ban, before any other work.
-		routes = append(routes, map[string]any{"handle": []any{map[string]any{"handler": "crowdsec"}}})
+		// First in the chain: drop IPs CrowdSec has decided to ban, before any other work
+		// (skipped for trusted clients).
+		routes = append(routes, protectionRoute([]any{map[string]any{"handler": "crowdsec"}}, trusted))
 	}
-	for _, r := range ipRoutes(globalBlocks) {
+	for _, r := range ipRoutes(globalBlocks, trusted) {
 		routes = append(routes, r) // edge-wide IP deny + allow-only gate
 	}
-	for _, r := range geoRoutes(globalGeo, opt.GeoIPDBPath) {
+	for _, r := range geoRoutes(globalGeo, opt.GeoIPDBPath, trusted) {
 		routes = append(routes, r) // edge-wide geo block + allow-only gate
 	}
 	if len(globalRLs) > 0 {
 		// pass-through middleware: caps every IP edge-wide, then continues to the service routes
-		routes = append(routes, map[string]any{"handle": []any{rateLimitHandler(globalRLs)}})
+		routes = append(routes, protectionRoute([]any{rateLimitHandler(globalRLs)}, trusted))
 	}
 	// Emit specific-host services before wildcard-host ones. Caddy evaluates a server's
 	// routes in order (first match wins) and the input is created_at order, so without
@@ -244,7 +250,7 @@ func Generate(in Input, opt Options) ([]byte, error) {
 		// then user-authored custom rules.
 		excl := append(append([]string{}, globalExcl...), exclByService[s.ID]...)
 		excl = append(append(excl, globalRules...), rulesByService[s.ID]...)
-		svcRoutes = append(svcRoutes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID], in.RawRoutes[s.ID]))
+		svcRoutes = append(svcRoutes, serviceRoute(s, opt, excl, blocksByService[s.ID], rlsByService[s.ID], geoByService[s.ID], in.RawRoutes[s.ID], trusted))
 		hostnames := serviceHostnames(s)
 		switch s.TLSMode {
 		case "none":
@@ -434,9 +440,57 @@ func httpsRedirectRoute(host string) map[string]any {
 }
 
 // denyRoute returns 403 for any request from the given IPs/CIDRs.
-func denyRoute(cidrs []string) map[string]any {
+// trustedCIDRs pulls the non-empty CIDR strings out of the trusted list.
+func trustedCIDRs(t []model.TrustedIP) []string {
+	out := make([]string, 0, len(t))
+	for _, x := range t {
+		if c := strings.TrimSpace(x.CIDR); c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// protectionRoute wraps threat-blocking handlers (crowdsec, rate-limit) in a route.
+// With trusted CIDRs set, the route only matches non-trusted clients, so trusted
+// clients skip the protection. Structure-preserving when trusted is empty.
+func protectionRoute(handlers []any, trusted []string) map[string]any {
+	r := map[string]any{"handle": handlers}
+	if len(trusted) > 0 {
+		r["match"] = []any{map[string]any{"not": []any{trustedMatcher(trusted)}}}
+	}
+	return r
+}
+
+func trustedMatcher(trusted []string) map[string]any {
+	return map[string]any{"remote_ip": map[string]any{"ranges": trusted}}
+}
+
+// gateHandler makes a single middleware handler apply only to non-trusted clients by
+// wrapping it in a subroute with a not-trusted matcher. Returns the handler unchanged
+// when there are no trusted CIDRs (identical output).
+func gateHandler(handler map[string]any, trusted []string) map[string]any {
+	if len(trusted) == 0 {
+		return handler
+	}
 	return map[string]any{
-		"match": []any{map[string]any{"remote_ip": map[string]any{"ranges": cidrs}}},
+		"handler": "subroute",
+		"routes": []any{
+			map[string]any{
+				"match":  []any{map[string]any{"not": []any{trustedMatcher(trusted)}}},
+				"handle": []any{handler},
+			},
+		},
+	}
+}
+
+func denyRoute(cidrs, trusted []string) map[string]any {
+	m := map[string]any{"remote_ip": map[string]any{"ranges": cidrs}}
+	if len(trusted) > 0 {
+		m["not"] = []any{trustedMatcher(trusted)} // never deny a trusted client
+	}
+	return map[string]any{
+		"match": []any{m},
 		"handle": []any{map[string]any{
 			"handler":     "static_response",
 			"status_code": "403",
@@ -448,7 +502,7 @@ func denyRoute(cidrs []string) map[string]any {
 // ipRoutes turns a scope's IP rules into up to two routes: a deny route for
 // block-mode entries, plus an allow-only gate (403 anything not listed) when any
 // allow-mode entries exist. Allow entries are unioned so multiple don't cancel out.
-func ipRoutes(blocks []model.BlockedIP) []map[string]any {
+func ipRoutes(blocks []model.BlockedIP, trusted []string) []map[string]any {
 	var deny, allow []string
 	for _, b := range blocks {
 		if b.Mode == "allow" {
@@ -459,20 +513,23 @@ func ipRoutes(blocks []model.BlockedIP) []map[string]any {
 	}
 	var out []map[string]any
 	if len(deny) > 0 {
-		out = append(out, denyRoute(deny))
+		out = append(out, denyRoute(deny, trusted))
 	}
 	if len(allow) > 0 {
-		out = append(out, allowOnlyIPRoute(allow))
+		out = append(out, allowOnlyIPRoute(allow, trusted))
 	}
 	return out
 }
 
-// allowOnlyIPRoute returns 403 for any client NOT in the given IPs/CIDRs.
-func allowOnlyIPRoute(cidrs []string) map[string]any {
+// allowOnlyIPRoute returns 403 for any client NOT in the given IPs/CIDRs (trusted
+// clients are also exempt).
+func allowOnlyIPRoute(cidrs, trusted []string) map[string]any {
+	not := []any{map[string]any{"remote_ip": map[string]any{"ranges": cidrs}}}
+	if len(trusted) > 0 {
+		not = append(not, trustedMatcher(trusted))
+	}
 	return map[string]any{
-		"match": []any{map[string]any{
-			"not": []any{map[string]any{"remote_ip": map[string]any{"ranges": cidrs}}},
-		}},
+		"match": []any{map[string]any{"not": not}},
 		"handle": []any{map[string]any{
 			"handler":     "static_response",
 			"status_code": "403",
@@ -483,7 +540,7 @@ func allowOnlyIPRoute(cidrs []string) map[string]any {
 
 // geoRoutes turns a scope's geo rules into up to two routes (block-mode deny +
 // allow-only gate). No-op when no GeoIP database is configured.
-func geoRoutes(rules []model.GeoRule, dbPath string) []map[string]any {
+func geoRoutes(rules []model.GeoRule, dbPath string, trusted []string) []map[string]any {
 	if dbPath == "" {
 		return nil
 	}
@@ -500,22 +557,25 @@ func geoRoutes(rules []model.GeoRule, dbPath string) []map[string]any {
 	}
 	var out []map[string]any
 	if len(deny) > 0 {
-		out = append(out, geoDenyRoute(deny, dbPath))
+		out = append(out, geoDenyRoute(deny, dbPath, trusted))
 	}
 	if len(allow) > 0 {
-		out = append(out, geoAllowRoute(allow, dbPath))
+		out = append(out, geoAllowRoute(allow, dbPath, trusted))
 	}
 	return out
 }
 
-// geoAllowRoute returns 403 for any request NOT from the given countries.
-func geoAllowRoute(countries []string, dbPath string) map[string]any {
+// geoAllowRoute returns 403 for any request NOT from the given countries (trusted
+// clients are also exempt).
+func geoAllowRoute(countries []string, dbPath string, trusted []string) map[string]any {
+	not := []any{map[string]any{
+		"maxmind_geolocation": map[string]any{"db_path": dbPath, "allow_countries": countries},
+	}}
+	if len(trusted) > 0 {
+		not = append(not, trustedMatcher(trusted))
+	}
 	return map[string]any{
-		"match": []any{map[string]any{
-			"not": []any{map[string]any{
-				"maxmind_geolocation": map[string]any{"db_path": dbPath, "allow_countries": countries},
-			}},
-		}},
+		"match": []any{map[string]any{"not": not}},
 		"handle": []any{map[string]any{
 			"handler":     "static_response",
 			"status_code": "403",
@@ -549,14 +609,18 @@ func rateLimitHandler(rls []model.RateLimit) map[string]any {
 // the matcher then fires precisely for those countries. Using deny_countries here
 // inverts the logic (it would 403 everyone *except* the listed countries), which
 // is the mirror of geoAllowRoute's `not { allow_countries }`.
-func geoDenyRoute(countries []string, dbPath string) map[string]any {
+func geoDenyRoute(countries []string, dbPath string, trusted []string) map[string]any {
+	m := map[string]any{
+		"maxmind_geolocation": map[string]any{
+			"db_path":         dbPath,
+			"allow_countries": countries,
+		},
+	}
+	if len(trusted) > 0 {
+		m["not"] = []any{trustedMatcher(trusted)} // never geo-block a trusted client
+	}
 	return map[string]any{
-		"match": []any{map[string]any{
-			"maxmind_geolocation": map[string]any{
-				"db_path":         dbPath,
-				"allow_countries": countries,
-			},
-		}},
+		"match": []any{m},
 		"handle": []any{map[string]any{
 			"handler":     "static_response",
 			"status_code": "403",
@@ -639,7 +703,7 @@ func GenerateExclusionSecLang(seclangID, ruleID int, pathMatch, path string, met
 
 // serviceRoute builds one host-matched route: [ip rules] → [geo rules] → [raw
 // Caddyfile routes] → [rate_limit?] → [waf?] → [http controls] → reverse_proxy.
-func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []model.BlockedIP, rateLimits []model.RateLimit, geoRules []model.GeoRule, rawRoutes []json.RawMessage) map[string]any {
+func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []model.BlockedIP, rateLimits []model.RateLimit, geoRules []model.GeoRule, rawRoutes []json.RawMessage, trusted []string) map[string]any {
 	// A redirect-only service: emit the redirect, skip the whole proxy/WAF chain (TLS
 	// for the hostname is still handled by the caller).
 	if strings.TrimSpace(s.Redirect.To) != "" {
@@ -649,10 +713,10 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 		}
 	}
 	innerRoutes := make([]any, 0, 4+len(rawRoutes))
-	for _, r := range ipRoutes(blocks) {
+	for _, r := range ipRoutes(blocks, trusted) {
 		innerRoutes = append(innerRoutes, r)
 	}
-	for _, r := range geoRoutes(geoRules, opt.GeoIPDBPath) {
+	for _, r := range geoRoutes(geoRules, opt.GeoIPDBPath, trusted) {
 		innerRoutes = append(innerRoutes, r)
 	}
 	// Advanced escape hatch: the user's adapted Caddyfile routes run here — after
@@ -663,14 +727,14 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 
 	handlers := make([]any, 0, 3)
 	if len(rateLimits) > 0 {
-		handlers = append(handlers, rateLimitHandler(rateLimits)) // cheap 429 before WAF work
+		handlers = append(handlers, gateHandler(rateLimitHandler(rateLimits), trusted)) // cheap 429 before WAF work
 	}
 	if s.WAFEnabled {
 		mode := s.WAFMode
 		if mode == "" {
 			mode = opt.WAFEngineMode // inherit the global default
 		}
-		handlers = append(handlers, gatedWAF(wafHandler(opt, mode, exclusions), s.WAFSkipPaths))
+		handlers = append(handlers, gatedWAF(wafHandler(opt, mode, exclusions), s.WAFSkipPaths, trusted))
 	}
 	// Structured HTTP controls run after the WAF (so it inspects the client's real
 	// request) and before the proxy: auth gate → headers → path rewrite → compression.
@@ -695,13 +759,16 @@ func serviceRoute(s model.Service, opt Options, exclusions []string, blocks []mo
 // -body-access off, engine off) avoids it, because the buffering is in the handler
 // itself. So the only fix is to keep those requests out of the handler. Skipped
 // requests fall straight through to the proxy; every other protection still runs.
-func gatedWAF(waf map[string]any, skipPaths []string) map[string]any {
+func gatedWAF(waf map[string]any, skipPaths, trusted []string) map[string]any {
 	// WebSocket upgrades always bypass — a WAF can't inspect WS frames regardless.
 	not := []any{
 		map[string]any{"header": map[string]any{"Upgrade": []string{"websocket"}}},
 	}
 	if globs := wafPathGlobs(skipPaths); len(globs) > 0 {
 		not = append(not, map[string]any{"path": globs})
+	}
+	if len(trusted) > 0 {
+		not = append(not, trustedMatcher(trusted)) // trusted clients skip the WAF
 	}
 	return map[string]any{
 		"handler": "subroute",
