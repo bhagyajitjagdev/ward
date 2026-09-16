@@ -10,7 +10,7 @@ COPY ui/ ./
 RUN npm run build
 
 # 2. Build the Go binary with the UI embedded (CGO off → static).
-FROM golang:1.25 AS build
+FROM golang:1.27 AS build
 ARG VERSION=dev
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
