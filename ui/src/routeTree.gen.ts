@@ -9,32 +9,31 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SetupRouteImport } from './routes/setup'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
-import { Route as AppWafEventsRouteImport } from './routes/_app.waf-events'
-import { Route as AppUsersRouteImport } from './routes/_app.users'
-import { Route as AppTopTriggersRouteImport } from './routes/_app.top-triggers'
-import { Route as AppTokensRouteImport } from './routes/_app.tokens'
-import { Route as AppSnapshotsRouteImport } from './routes/_app.snapshots'
-import { Route as AppSettingsRouteImport } from './routes/_app.settings'
-import { Route as AppServicesRouteImport } from './routes/_app.services'
-import { Route as AppRateLimitsRouteImport } from './routes/_app.rate-limits'
-import { Route as AppGeoRouteImport } from './routes/_app.geo'
-import { Route as AppExclusionsRouteImport } from './routes/_app.exclusions'
-import { Route as AppCertificatesRouteImport } from './routes/_app.certificates'
-import { Route as AppBlocklistRouteImport } from './routes/_app.blocklist'
-import { Route as AppAuditRouteImport } from './routes/_app.audit'
 import { Route as AppAccessRouteImport } from './routes/_app.access'
+import { Route as AppAuditRouteImport } from './routes/_app.audit'
+import { Route as AppBlocklistRouteImport } from './routes/_app.blocklist'
+import { Route as AppCertificatesRouteImport } from './routes/_app.certificates'
+import { Route as AppExclusionsRouteImport } from './routes/_app.exclusions'
+import { Route as AppGeoRouteImport } from './routes/_app.geo'
+import { Route as AppRateLimitsRouteImport } from './routes/_app.rate-limits'
+import { Route as AppServicesRouteImport } from './routes/_app.services'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AppSnapshotsRouteImport } from './routes/_app.snapshots'
+import { Route as AppTokensRouteImport } from './routes/_app.tokens'
+import { Route as AppTopTriggersRouteImport } from './routes/_app.top-triggers'
+import { Route as AppUsersRouteImport } from './routes/_app.users'
+import { Route as AppWafEventsRouteImport } from './routes/_app.waf-events'
 import { Route as AppServicesIndexRouteImport } from './routes/_app.services.index'
-import { Route as AppServicesNewRouteImport } from './routes/_app.services.new'
 import { Route as AppServicesIdRouteImport } from './routes/_app.services.$id'
+import { Route as AppServicesNewRouteImport } from './routes/_app.services.new'
 import { Route as AppServicesIdEditRouteImport } from './routes/_app.services.$id_.edit'
 
-const SetupRoute = SetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -42,8 +41,9 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -51,64 +51,9 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppWafEventsRoute = AppWafEventsRouteImport.update({
-  id: '/waf-events',
-  path: '/waf-events',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppUsersRoute = AppUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppTopTriggersRoute = AppTopTriggersRouteImport.update({
-  id: '/top-triggers',
-  path: '/top-triggers',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppTokensRoute = AppTokensRouteImport.update({
-  id: '/tokens',
-  path: '/tokens',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSnapshotsRoute = AppSnapshotsRouteImport.update({
-  id: '/snapshots',
-  path: '/snapshots',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppServicesRoute = AppServicesRouteImport.update({
-  id: '/services',
-  path: '/services',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppRateLimitsRoute = AppRateLimitsRouteImport.update({
-  id: '/rate-limits',
-  path: '/rate-limits',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppGeoRoute = AppGeoRouteImport.update({
-  id: '/geo',
-  path: '/geo',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppExclusionsRoute = AppExclusionsRouteImport.update({
-  id: '/exclusions',
-  path: '/exclusions',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppCertificatesRoute = AppCertificatesRouteImport.update({
-  id: '/certificates',
-  path: '/certificates',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppBlocklistRoute = AppBlocklistRouteImport.update({
-  id: '/blocklist',
-  path: '/blocklist',
+const AppAccessRoute = AppAccessRouteImport.update({
+  id: '/access',
+  path: '/access',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAuditRoute = AppAuditRouteImport.update({
@@ -116,9 +61,64 @@ const AppAuditRoute = AppAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAccessRoute = AppAccessRouteImport.update({
-  id: '/access',
-  path: '/access',
+const AppBlocklistRoute = AppBlocklistRouteImport.update({
+  id: '/blocklist',
+  path: '/blocklist',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCertificatesRoute = AppCertificatesRouteImport.update({
+  id: '/certificates',
+  path: '/certificates',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppExclusionsRoute = AppExclusionsRouteImport.update({
+  id: '/exclusions',
+  path: '/exclusions',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppGeoRoute = AppGeoRouteImport.update({
+  id: '/geo',
+  path: '/geo',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRateLimitsRoute = AppRateLimitsRouteImport.update({
+  id: '/rate-limits',
+  path: '/rate-limits',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppServicesRoute = AppServicesRouteImport.update({
+  id: '/services',
+  path: '/services',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSnapshotsRoute = AppSnapshotsRouteImport.update({
+  id: '/snapshots',
+  path: '/snapshots',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTokensRoute = AppTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTopTriggersRoute = AppTopTriggersRouteImport.update({
+  id: '/top-triggers',
+  path: '/top-triggers',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppUsersRoute = AppUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWafEventsRoute = AppWafEventsRouteImport.update({
+  id: '/waf-events',
+  path: '/waf-events',
   getParentRoute: () => AppRoute,
 } as any)
 const AppServicesIndexRoute = AppServicesIndexRouteImport.update({
@@ -126,14 +126,14 @@ const AppServicesIndexRoute = AppServicesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppServicesRoute,
 } as any)
-const AppServicesNewRoute = AppServicesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => AppServicesRoute,
-} as any)
 const AppServicesIdRoute = AppServicesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
+  getParentRoute: () => AppServicesRoute,
+} as any)
+const AppServicesNewRoute = AppServicesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
   getParentRoute: () => AppServicesRoute,
 } as any)
 const AppServicesIdEditRoute = AppServicesIdEditRouteImport.update({
@@ -292,11 +292,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/setup': {
-      id: '/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof SetupRouteImport
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -306,11 +306,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app': {
-      id: '/_app'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -320,88 +320,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/waf-events': {
-      id: '/_app/waf-events'
-      path: '/waf-events'
-      fullPath: '/waf-events'
-      preLoaderRoute: typeof AppWafEventsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/users': {
-      id: '/_app/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof AppUsersRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/top-triggers': {
-      id: '/_app/top-triggers'
-      path: '/top-triggers'
-      fullPath: '/top-triggers'
-      preLoaderRoute: typeof AppTopTriggersRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/tokens': {
-      id: '/_app/tokens'
-      path: '/tokens'
-      fullPath: '/tokens'
-      preLoaderRoute: typeof AppTokensRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/snapshots': {
-      id: '/_app/snapshots'
-      path: '/snapshots'
-      fullPath: '/snapshots'
-      preLoaderRoute: typeof AppSnapshotsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/settings': {
-      id: '/_app/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/services': {
-      id: '/_app/services'
-      path: '/services'
-      fullPath: '/services'
-      preLoaderRoute: typeof AppServicesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/rate-limits': {
-      id: '/_app/rate-limits'
-      path: '/rate-limits'
-      fullPath: '/rate-limits'
-      preLoaderRoute: typeof AppRateLimitsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/geo': {
-      id: '/_app/geo'
-      path: '/geo'
-      fullPath: '/geo'
-      preLoaderRoute: typeof AppGeoRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/exclusions': {
-      id: '/_app/exclusions'
-      path: '/exclusions'
-      fullPath: '/exclusions'
-      preLoaderRoute: typeof AppExclusionsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/certificates': {
-      id: '/_app/certificates'
-      path: '/certificates'
-      fullPath: '/certificates'
-      preLoaderRoute: typeof AppCertificatesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/blocklist': {
-      id: '/_app/blocklist'
-      path: '/blocklist'
-      fullPath: '/blocklist'
-      preLoaderRoute: typeof AppBlocklistRouteImport
+    '/_app/access': {
+      id: '/_app/access'
+      path: '/access'
+      fullPath: '/access'
+      preLoaderRoute: typeof AppAccessRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/audit': {
@@ -411,11 +334,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAuditRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/access': {
-      id: '/_app/access'
-      path: '/access'
-      fullPath: '/access'
-      preLoaderRoute: typeof AppAccessRouteImport
+    '/_app/blocklist': {
+      id: '/_app/blocklist'
+      path: '/blocklist'
+      fullPath: '/blocklist'
+      preLoaderRoute: typeof AppBlocklistRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/certificates': {
+      id: '/_app/certificates'
+      path: '/certificates'
+      fullPath: '/certificates'
+      preLoaderRoute: typeof AppCertificatesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/exclusions': {
+      id: '/_app/exclusions'
+      path: '/exclusions'
+      fullPath: '/exclusions'
+      preLoaderRoute: typeof AppExclusionsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/geo': {
+      id: '/_app/geo'
+      path: '/geo'
+      fullPath: '/geo'
+      preLoaderRoute: typeof AppGeoRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/rate-limits': {
+      id: '/_app/rate-limits'
+      path: '/rate-limits'
+      fullPath: '/rate-limits'
+      preLoaderRoute: typeof AppRateLimitsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/services': {
+      id: '/_app/services'
+      path: '/services'
+      fullPath: '/services'
+      preLoaderRoute: typeof AppServicesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/snapshots': {
+      id: '/_app/snapshots'
+      path: '/snapshots'
+      fullPath: '/snapshots'
+      preLoaderRoute: typeof AppSnapshotsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/tokens': {
+      id: '/_app/tokens'
+      path: '/tokens'
+      fullPath: '/tokens'
+      preLoaderRoute: typeof AppTokensRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/top-triggers': {
+      id: '/_app/top-triggers'
+      path: '/top-triggers'
+      fullPath: '/top-triggers'
+      preLoaderRoute: typeof AppTopTriggersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/users': {
+      id: '/_app/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof AppUsersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/waf-events': {
+      id: '/_app/waf-events'
+      path: '/waf-events'
+      fullPath: '/waf-events'
+      preLoaderRoute: typeof AppWafEventsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/services/': {
@@ -425,18 +425,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppServicesIndexRouteImport
       parentRoute: typeof AppServicesRoute
     }
-    '/_app/services/new': {
-      id: '/_app/services/new'
-      path: '/new'
-      fullPath: '/services/new'
-      preLoaderRoute: typeof AppServicesNewRouteImport
-      parentRoute: typeof AppServicesRoute
-    }
     '/_app/services/$id': {
       id: '/_app/services/$id'
       path: '/$id'
       fullPath: '/services/$id'
       preLoaderRoute: typeof AppServicesIdRouteImport
+      parentRoute: typeof AppServicesRoute
+    }
+    '/_app/services/new': {
+      id: '/_app/services/new'
+      path: '/new'
+      fullPath: '/services/new'
+      preLoaderRoute: typeof AppServicesNewRouteImport
       parentRoute: typeof AppServicesRoute
     }
     '/_app/services/$id_/edit': {
