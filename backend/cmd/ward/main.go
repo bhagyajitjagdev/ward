@@ -39,47 +39,10 @@ func main() {
 	}
 	defer st.Close()
 
-	// `ward gen-config` — print the generated config and exit (validation / ops aid).
+	// `ward gen-config` — print the config Ward would push and exit (validation /
+	// ops aid). Same render path as a live apply, so the output is exactly it.
 	if len(os.Args) > 1 && os.Args[1] == "gen-config" {
-		ctx := context.Background()
-		services, err := st.ListServices(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		exclusions, err := st.ListExclusions(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		customRules, err := st.ListWAFCustomRules(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		blocks, err := st.ListActiveBlocks(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		rateLimits, err := st.ListRateLimits(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		geoRules, err := st.ListGeoRules(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		opt := caddyOptions()
-		opt.WAFEngineMode = st.WAFEngineMode(ctx, opt.WAFEngineMode)
-		opt.ACMEEmail = st.ACMEEmail(ctx, opt.ACMEEmail)
-		opt.CrowdSecEnabled = st.CrowdSecEnabled(ctx, opt.CrowdSecEnabled)
-		cfg, err := caddy.Generate(caddy.Input{
-			Services:     services,
-			Exclusions:   exclusions,
-			CustomRules:  customRules,
-			Blocks:       blocks,
-			RateLimits:   rateLimits,
-			GeoRules:     geoRules,
-			Certificates: caddy.ResolveCustomCerts(),
-			RawRoutes:    caddy.AdaptRawRoutes(services),
-		}, opt)
+		cfg, err := caddy.NewApplier(st, nil, caddyOptions()).Render(context.Background())
 		if err != nil {
 			log.Fatal(err)
 		}

@@ -62,8 +62,34 @@ func (h *Handler) uploadCertificate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) deleteCertificate(w http.ResponseWriter, r *http.Request) {
 	domain := r.PathValue("domain")
-	if _, ok := certs.Get(certs.Dir(), domain); !ok {
+	c, ok := certs.Get(certs.Dir(), domain)
+	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	// Guard: a tls_mode=custom service whose hostname only this cert secures would
+	// silently fall out of skip_certificates on the next reconcile and have Caddy try
+	// to auto-issue for it. Refuse until the service is moved or a replacement exists.
+	svcs, err := h.store.ListServices(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	var inUse []string
+	for _, s := range svcs {
+		if !s.Enabled || s.TLSMode != "custom" {
+			continue
+		}
+		for _, hn := range s.PublicHostnames {
+			if c.Secures(hn) && !certs.CoversExcept(certs.Dir(), hn, c.Domain) {
+				inUse = append(inUse, s.Name+" ("+hn+")")
+				break
+			}
+		}
+	}
+	if len(inUse) > 0 {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "certificate is still used by " +
+			strings.Join(inUse, ", ") + " — switch those services to another TLS mode or upload a replacement first"})
 		return
 	}
 	if err := certs.Remove(certs.Dir(), domain); err != nil {

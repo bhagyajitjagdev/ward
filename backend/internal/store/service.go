@@ -182,43 +182,39 @@ func (s *Store) HostnamesInUse(ctx context.Context, names []string, excludeID st
 	return dup, nil
 }
 
-// CreateService inserts a new service (server-assigned id + timestamps) and returns it.
-func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Service, error) {
-	id, err := uuid.NewV7()
-	if err != nil {
-		return model.Service{}, err
-	}
+// serviceRowFrom renders a service's storable columns (everything except the id,
+// timestamps and Enabled, which each caller sets). Shared by create, update and
+// the snapshot restore so the JSON blobs are marshalled in exactly one place.
+func serviceRowFrom(in model.Service) (serviceRow, error) {
 	ups, err := json.Marshal(orEmpty(in.Upstreams))
 	if err != nil {
-		return model.Service{}, err
+		return serviceRow{}, err
 	}
 	primary, extras, err := splitHostnames(in)
 	if err != nil {
-		return model.Service{}, err
+		return serviceRow{}, err
 	}
 	httpCfg, err := marshalHTTP(in.HTTP)
 	if err != nil {
-		return model.Service{}, err
+		return serviceRow{}, err
 	}
 	skip, err := json.Marshal(orEmpty(in.WAFSkipPaths))
 	if err != nil {
-		return model.Service{}, err
+		return serviceRow{}, err
 	}
 	hc, err := json.Marshal(in.HealthCheck)
 	if err != nil {
-		return model.Service{}, err
+		return serviceRow{}, err
 	}
 	rd, err := json.Marshal(in.Redirect)
 	if err != nil {
-		return model.Service{}, err
+		return serviceRow{}, err
 	}
 	pr, err := json.Marshal(orRules(in.PathRules))
 	if err != nil {
-		return model.Service{}, err
+		return serviceRow{}, err
 	}
-	now := time.Now().UTC()
-	row := serviceRow{
-		ID:             id.String(),
+	return serviceRow{
 		Name:           in.Name,
 		PublicHostname: primary,
 		ExtraHostnames: extras,
@@ -233,10 +229,21 @@ func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Serv
 		HealthCheck:    string(hc),
 		Redirect:       string(rd),
 		PathRules:      string(pr),
-		Enabled:        true,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+	}, nil
+}
+
+// CreateService inserts a new service (server-assigned id + timestamps) and returns it.
+func (s *Store) CreateService(ctx context.Context, in model.Service) (model.Service, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return model.Service{}, err
 	}
+	row, err := serviceRowFrom(in)
+	if err != nil {
+		return model.Service{}, err
+	}
+	now := time.Now().UTC()
+	row.ID, row.Enabled, row.CreatedAt, row.UpdatedAt = id.String(), true, now, now
 	if _, err := s.DB.NewInsert().Model(&row).Exec(ctx); err != nil {
 		if isUniqueViolation(err) {
 			return model.Service{}, ErrConflict
@@ -279,53 +286,11 @@ func (s *Store) GetService(ctx context.Context, id string) (model.Service, error
 // UpdateService replaces a service's mutable fields and returns the updated row
 // (ErrNotFound if missing, ErrConflict on a hostname clash).
 func (s *Store) UpdateService(ctx context.Context, id string, in model.Service) (model.Service, error) {
-	ups, err := json.Marshal(orEmpty(in.Upstreams))
+	row, err := serviceRowFrom(in)
 	if err != nil {
 		return model.Service{}, err
 	}
-	primary, extras, err := splitHostnames(in)
-	if err != nil {
-		return model.Service{}, err
-	}
-	httpCfg, err := marshalHTTP(in.HTTP)
-	if err != nil {
-		return model.Service{}, err
-	}
-	skip, err := json.Marshal(orEmpty(in.WAFSkipPaths))
-	if err != nil {
-		return model.Service{}, err
-	}
-	hc, err := json.Marshal(in.HealthCheck)
-	if err != nil {
-		return model.Service{}, err
-	}
-	rd, err := json.Marshal(in.Redirect)
-	if err != nil {
-		return model.Service{}, err
-	}
-	pr, err := json.Marshal(orRules(in.PathRules))
-	if err != nil {
-		return model.Service{}, err
-	}
-	row := serviceRow{
-		ID:             id,
-		Name:           in.Name,
-		PublicHostname: primary,
-		ExtraHostnames: extras,
-		HTTPConfig:     httpCfg,
-		RawCaddy:       in.RawCaddy,
-		Upstreams:      string(ups),
-		LBPolicy:       orDefault(in.LBPolicy, "round_robin"),
-		TLSMode:        orDefault(in.TLSMode, "internal"),
-		WAFEnabled:     in.WAFEnabled,
-		WAFMode:        in.WAFMode,
-		WAFSkipPaths:   string(skip),
-		HealthCheck:    string(hc),
-		Redirect:       string(rd),
-		PathRules:      string(pr),
-		Enabled:        in.Enabled,
-		UpdatedAt:      time.Now().UTC(),
-	}
+	row.ID, row.Enabled, row.UpdatedAt = id, in.Enabled, time.Now().UTC()
 	res, err := s.DB.NewUpdate().Model(&row).
 		Column("name", "public_hostname", "extra_hostnames", "http_config", "raw_caddy", "upstreams", "lb_policy", "tls_mode", "waf_enabled", "waf_mode", "waf_skip_paths", "health_check", "redirect", "path_rules", "enabled", "updated_at").
 		WherePK().Exec(ctx)

@@ -417,6 +417,24 @@ function CrowdSecDecisions() {
   )
 }
 
+// Expiry presets for a temporary ban. "keep" only appears while editing a rule that
+// already has an expiry — it round-trips the existing timestamp unchanged.
+const EXPIRY_PRESETS = [
+  { value: "never", label: "Never" },
+  { value: "1h", label: "1 hour" },
+  { value: "6h", label: "6 hours" },
+  { value: "24h", label: "24 hours" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+] as const
+const EXPIRY_MS: Record<string, number> = {
+  "1h": 3600e3,
+  "6h": 6 * 3600e3,
+  "24h": 24 * 3600e3,
+  "7d": 7 * 86400e3,
+  "30d": 30 * 86400e3,
+}
+
 function BlockDialog({ editing, open, onOpenChange }: { editing: Block | null; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient()
   const { data: services } = useServices()
@@ -424,6 +442,7 @@ function BlockDialog({ editing, open, onOpenChange }: { editing: Block | null; o
   const [reason, setReason] = useState("")
   const [scope, setScope] = useState("global") // "global" | <service id>
   const [mode, setMode] = useState<RuleMode>("block")
+  const [expires, setExpires] = useState("never") // "never" | "keep" | preset
 
   useEffect(() => {
     if (!open) return
@@ -431,16 +450,24 @@ function BlockDialog({ editing, open, onOpenChange }: { editing: Block | null; o
     setReason(editing?.reason ?? "")
     setScope(editing?.scope === "service" ? (editing.service_id ?? "global") : "global")
     setMode((editing?.mode as RuleMode) ?? "block")
+    setExpires(editing?.expires_at ? "keep" : "never")
   }, [open, editing])
 
   const save = useMutation({
     mutationFn: () => {
+      // The backend replaces the whole rule on PATCH, so the expiry must always be
+      // sent: the kept timestamp, a new one, or null to make the rule permanent.
+      const expires_at =
+        expires === "keep" ? (editing?.expires_at ?? null)
+        : expires === "never" ? null
+        : new Date(Date.now() + EXPIRY_MS[expires]).toISOString()
       const input = {
         cidr: cidr.trim(),
         reason: reason.trim() || undefined,
         mode,
         scope: (scope === "global" ? "global" : "service") as "global" | "service",
         service_id: scope === "global" ? undefined : scope,
+        expires_at,
       }
       return editing ? api.updateBlock(editing.id, input) : api.createBlock(input)
     },
@@ -517,6 +544,27 @@ function BlockDialog({ editing, open, onOpenChange }: { editing: Block | null; o
               onChange={(e) => setReason(e.target.value)}
               placeholder="Sustained SQLi on /api/leads/batch"
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="expires">Expires</Label>
+            <Select value={expires} onValueChange={setExpires}>
+              <SelectTrigger id="expires" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {editing?.expires_at && (
+                  <SelectItem value="keep">Keep current · in {until(editing.expires_at)}</SelectItem>
+                )}
+                {EXPIRY_PRESETS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              A temporary rule drops off the edge on its own; "never" makes it permanent.
+            </p>
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

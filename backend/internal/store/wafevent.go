@@ -153,24 +153,52 @@ func (s *Store) LatestCRSVersion(ctx context.Context) string {
 	return v
 }
 
-// LeanWAFEvent is a minimal projection of a waf_events row for dashboard aggregation.
-type LeanWAFEvent struct {
-	TS             time.Time `bun:"ts"`
-	ServiceID      *string   `bun:"service_id"`
-	IsInterrupted  bool      `bun:"is_interrupted"`
-	IsAnomalyScore bool      `bun:"is_anomaly_score"`
+// WAFBucket is one time-series point: detections + how many were blocked, in the
+// bucket starting at Bucket (Unix seconds). Anomaly aggregators (949xxx) are
+// excluded — they double-count the rule that actually matched.
+type WAFBucket struct {
+	Bucket     int64 `bun:"bucket"`
+	Detections int64 `bun:"detections"`
+	Blocked    int64 `bun:"blocked"`
 }
 
-// LeanWAFEventsSince returns minimal event rows at or after `since`, for aggregation.
-func (s *Store) LeanWAFEventsSince(ctx context.Context, since time.Time) ([]LeanWAFEvent, error) {
-	var rows []LeanWAFEvent
-	err := s.DB.NewSelect().
-		TableExpr("waf_events").
-		ColumnExpr("ts").
-		ColumnExpr("service_id").
-		ColumnExpr("is_interrupted").
-		ColumnExpr("is_anomaly_score").
+// WAFSeriesSince buckets detections since `since` into bucketSec-wide points, in
+// SQL. Oldest first; empty buckets are absent.
+func (s *Store) WAFSeriesSince(ctx context.Context, since time.Time, bucketSec int64) ([]WAFBucket, error) {
+	if bucketSec <= 0 {
+		bucketSec = 3600
+	}
+	bucket := s.bucketExpr("ts", bucketSec)
+	var rows []WAFBucket
+	err := s.DB.NewSelect().TableExpr("waf_events").
+		ColumnExpr(bucket+" AS bucket").
+		ColumnExpr("COUNT(*) AS detections").
+		ColumnExpr("CAST(COALESCE(SUM(CASE WHEN is_interrupted THEN 1 ELSE 0 END), 0) AS BIGINT) AS blocked").
+		Where("is_anomaly_score = ?", false).
 		Where("ts >= ?", since).
+		GroupExpr(bucket).
+		OrderExpr("bucket ASC").
+		Scan(ctx, &rows)
+	return rows, err
+}
+
+// ServiceCount is a per-service detection count.
+type ServiceCount struct {
+	ServiceID string `bun:"service_id"`
+	Count     int64  `bun:"n"`
+}
+
+// WAFCountByServiceSince counts (non-anomaly) detections per mapped service.
+func (s *Store) WAFCountByServiceSince(ctx context.Context, since time.Time) ([]ServiceCount, error) {
+	var rows []ServiceCount
+	err := s.DB.NewSelect().TableExpr("waf_events").
+		ColumnExpr("service_id").
+		ColumnExpr("COUNT(*) AS n").
+		Where("is_anomaly_score = ?", false).
+		Where("service_id IS NOT NULL").
+		Where("ts >= ?", since).
+		GroupExpr("service_id").
+		OrderExpr("n DESC").
 		Scan(ctx, &rows)
 	return rows, err
 }

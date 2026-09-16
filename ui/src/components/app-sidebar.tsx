@@ -11,6 +11,7 @@ import {
   Timer,
   Globe,
   FileKey,
+  History,
   Users,
   KeyRound,
   ScrollText,
@@ -66,6 +67,7 @@ const groups = [
       { title: "Rate Limits", to: "/rate-limits", icon: Timer },
       { title: "Geo Blocking", to: "/geo", icon: Globe },
       { title: "Certificates", to: "/certificates", icon: FileKey },
+      { title: "Snapshots", to: "/snapshots", icon: History },
     ],
   },
   {

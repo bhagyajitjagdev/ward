@@ -20,19 +20,36 @@ type snapshotRow struct {
 
 	ID        string    `bun:"id,pk"`
 	CaddyJSON string    `bun:"caddy_json,notnull"`
+	WardJSON  string    `bun:"ward_json,notnull"` // DesiredState JSON; '' on legacy rows
 	Note      string    `bun:"note"`
 	Active    bool      `bun:"active,notnull"`
 	CreatedAt time.Time `bun:"created_at,notnull"`
+
+	// Restorable is computed by ListSnapshots (ward_json <> '') so the list can say
+	// which snapshots a rollback can restore without shipping the state itself.
+	Restorable bool `bun:"restorable,scanonly"`
 }
 
-// SaveSnapshot records an applied Caddy config and marks it the active one
-// (deactivating any previous active snapshot). This is the rollback history.
-func (s *Store) SaveSnapshot(ctx context.Context, cfgJSON []byte) error {
+// SaveSnapshot records an applied config — the rendered Caddy JSON plus the desired
+// state it came from — and marks it the active one. It is a no-op when both are
+// identical to the active snapshot: the reconciler re-applies every minute, and
+// without this the history would fill with one identical row per tick, pushing the
+// snapshots that matter (real changes) out of the list.
+func (s *Store) SaveSnapshot(ctx context.Context, cfgJSON, wardJSON []byte, note string) error {
 	id, err := uuid.NewV7()
 	if err != nil {
 		return err
 	}
 	return s.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var active snapshotRow
+		err := tx.NewSelect().Model(&active).Column("caddy_json", "ward_json").
+			Where("active = ?", true).Limit(1).Scan(ctx)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil && active.CaddyJSON == string(cfgJSON) && active.WardJSON == string(wardJSON) {
+			return nil // nothing changed — keep the history meaningful
+		}
 		if _, err := tx.NewUpdate().
 			Table("config_snapshots").
 			Set("active = ?", false).
@@ -43,23 +60,30 @@ func (s *Store) SaveSnapshot(ctx context.Context, cfgJSON []byte) error {
 		row := &snapshotRow{
 			ID:        id.String(),
 			CaddyJSON: string(cfgJSON),
+			WardJSON:  string(wardJSON),
+			Note:      note,
 			Active:    true,
 			CreatedAt: time.Now().UTC(),
 		}
-		_, err := tx.NewInsert().Model(row).Exec(ctx)
+		_, err = tx.NewInsert().Model(row).Exec(ctx)
 		return err
 	})
 }
 
 func (r snapshotRow) toModel() model.ConfigSnapshot {
-	return model.ConfigSnapshot{ID: r.ID, Note: r.Note, Active: r.Active, CreatedAt: r.CreatedAt, CaddyJSON: r.CaddyJSON}
+	return model.ConfigSnapshot{
+		ID: r.ID, Note: r.Note, Active: r.Active, CreatedAt: r.CreatedAt,
+		Restorable: r.Restorable || r.WardJSON != "",
+		CaddyJSON:  r.CaddyJSON, WardJSON: r.WardJSON,
+	}
 }
 
-// ListSnapshots returns snapshot metadata (no config body), newest first.
+// ListSnapshots returns snapshot metadata (no config bodies), newest first.
 func (s *Store) ListSnapshots(ctx context.Context) ([]model.ConfigSnapshot, error) {
 	var rows []snapshotRow
 	err := s.DB.NewSelect().Model(&rows).
 		Column("id", "note", "active", "created_at").
+		ColumnExpr("(cs.ward_json <> '') AS restorable").
 		Order("created_at DESC").Limit(100).Scan(ctx)
 	if err != nil {
 		return nil, err
@@ -71,11 +95,14 @@ func (s *Store) ListSnapshots(ctx context.Context) ([]model.ConfigSnapshot, erro
 	return out, nil
 }
 
-// GetSnapshot returns a full snapshot (including CaddyJSON), or nil if not found.
+// GetSnapshot returns a full snapshot (including CaddyJSON + WardJSON), or nil if
+// not found.
 func (s *Store) GetSnapshot(ctx context.Context, id string) (*model.ConfigSnapshot, error) {
 	var row snapshotRow
-	err := s.DB.NewSelect().Model(&row).Where("id = ?", id).Limit(1).Scan(ctx)
-	if err == sql.ErrNoRows {
+	err := s.DB.NewSelect().Model(&row).
+		Column("id", "caddy_json", "ward_json", "note", "active", "created_at").
+		Where("id = ?", id).Limit(1).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -83,17 +110,4 @@ func (s *Store) GetSnapshot(ctx context.Context, id string) (*model.ConfigSnapsh
 	}
 	m := row.toModel()
 	return &m, nil
-}
-
-// SetActiveSnapshot marks one snapshot active (deactivating the rest).
-func (s *Store) SetActiveSnapshot(ctx context.Context, id string) error {
-	return s.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if _, err := tx.NewUpdate().Table("config_snapshots").
-			Set("active = ?", false).Where("active = ?", true).Exec(ctx); err != nil {
-			return err
-		}
-		_, err := tx.NewUpdate().Table("config_snapshots").
-			Set("active = ?", true).Where("id = ?", id).Exec(ctx)
-		return err
-	})
 }

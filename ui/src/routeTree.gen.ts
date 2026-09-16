@@ -17,6 +17,7 @@ import { Route as AppWafEventsRouteImport } from './routes/_app.waf-events'
 import { Route as AppUsersRouteImport } from './routes/_app.users'
 import { Route as AppTopTriggersRouteImport } from './routes/_app.top-triggers'
 import { Route as AppTokensRouteImport } from './routes/_app.tokens'
+import { Route as AppSnapshotsRouteImport } from './routes/_app.snapshots'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppServicesRouteImport } from './routes/_app.services'
 import { Route as AppRateLimitsRouteImport } from './routes/_app.rate-limits'
@@ -68,6 +69,11 @@ const AppTopTriggersRoute = AppTopTriggersRouteImport.update({
 const AppTokensRoute = AppTokensRouteImport.update({
   id: '/tokens',
   path: '/tokens',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSnapshotsRoute = AppSnapshotsRouteImport.update({
+  id: '/snapshots',
+  path: '/snapshots',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -149,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/rate-limits': typeof AppRateLimitsRoute
   '/services': typeof AppServicesRouteWithChildren
   '/settings': typeof AppSettingsRoute
+  '/snapshots': typeof AppSnapshotsRoute
   '/tokens': typeof AppTokensRoute
   '/top-triggers': typeof AppTopTriggersRoute
   '/users': typeof AppUsersRoute
@@ -169,6 +176,7 @@ export interface FileRoutesByTo {
   '/geo': typeof AppGeoRoute
   '/rate-limits': typeof AppRateLimitsRoute
   '/settings': typeof AppSettingsRoute
+  '/snapshots': typeof AppSnapshotsRoute
   '/tokens': typeof AppTokensRoute
   '/top-triggers': typeof AppTopTriggersRoute
   '/users': typeof AppUsersRoute
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/_app/rate-limits': typeof AppRateLimitsRoute
   '/_app/services': typeof AppServicesRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
+  '/_app/snapshots': typeof AppSnapshotsRoute
   '/_app/tokens': typeof AppTokensRoute
   '/_app/top-triggers': typeof AppTopTriggersRoute
   '/_app/users': typeof AppUsersRoute
@@ -218,6 +227,7 @@ export interface FileRouteTypes {
     | '/rate-limits'
     | '/services'
     | '/settings'
+    | '/snapshots'
     | '/tokens'
     | '/top-triggers'
     | '/users'
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/geo'
     | '/rate-limits'
     | '/settings'
+    | '/snapshots'
     | '/tokens'
     | '/top-triggers'
     | '/users'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/_app/rate-limits'
     | '/_app/services'
     | '/_app/settings'
+    | '/_app/snapshots'
     | '/_app/tokens'
     | '/_app/top-triggers'
     | '/_app/users'
@@ -334,6 +346,13 @@ declare module '@tanstack/react-router' {
       path: '/tokens'
       fullPath: '/tokens'
       preLoaderRoute: typeof AppTokensRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/snapshots': {
+      id: '/_app/snapshots'
+      path: '/snapshots'
+      fullPath: '/snapshots'
+      preLoaderRoute: typeof AppSnapshotsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings': {
@@ -458,6 +477,7 @@ interface AppRouteChildren {
   AppRateLimitsRoute: typeof AppRateLimitsRoute
   AppServicesRoute: typeof AppServicesRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
+  AppSnapshotsRoute: typeof AppSnapshotsRoute
   AppTokensRoute: typeof AppTokensRoute
   AppTopTriggersRoute: typeof AppTopTriggersRoute
   AppUsersRoute: typeof AppUsersRoute
@@ -475,6 +495,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppRateLimitsRoute: AppRateLimitsRoute,
   AppServicesRoute: AppServicesRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
+  AppSnapshotsRoute: AppSnapshotsRoute,
   AppTokensRoute: AppTokensRoute,
   AppTopTriggersRoute: AppTopTriggersRoute,
   AppUsersRoute: AppUsersRoute,

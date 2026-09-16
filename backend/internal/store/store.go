@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,6 +72,22 @@ func Open(dsn string) (*Store, error) {
 
 // Dialect reports the resolved dialect ("sqlite3" or "postgres").
 func (s *Store) Dialect() string { return s.dialect }
+
+// epochExpr renders col (a TIMESTAMP column) as integer Unix seconds in the
+// current dialect — the one piece of time-bucketing SQL that isn't portable.
+func (s *Store) epochExpr(col string) string {
+	if s.dialect == "postgres" {
+		return "CAST(EXTRACT(EPOCH FROM " + col + ") AS BIGINT)"
+	}
+	return "CAST(strftime('%s', " + col + ") AS INTEGER)"
+}
+
+// bucketExpr renders the start (Unix seconds) of the bucketSec-wide bucket a
+// timestamp column falls in — integer division, so buckets are epoch-aligned.
+func (s *Store) bucketExpr(col string, bucketSec int64) string {
+	b := strconv.FormatInt(bucketSec, 10)
+	return "(" + s.epochExpr(col) + " / " + b + ") * " + b
+}
 
 // Close closes the underlying connection.
 func (s *Store) Close() error { return s.DB.Close() }

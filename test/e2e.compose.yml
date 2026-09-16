@@ -14,6 +14,7 @@ services:
     volumes:
       - ./bootstrap.json:/etc/caddy/bootstrap.json:ro
       - audit:/shared
+      - certs:/certs:ro # uploaded (custom) certs — ward writes, caddy load_files reads
 
   # Legacy simple upstream — kept as a second dial target.
   whoami:
@@ -43,6 +44,7 @@ services:
       WARD_CADDY_AUTO_HTTPS: "1" # HTTPS listener on :443 — internal-CA service + TLS-hardening check (none-mode services stay HTTP)
     volumes:
       - audit:/shared
+      - certs:/certs
     depends_on: [caddy, whoami, appserver]
 
   # The e2e runner — drives Ward's API + asserts through the edge, exits non-zero on
@@ -63,3 +65,4 @@ services:
 
 volumes:
   audit:
+  certs:
