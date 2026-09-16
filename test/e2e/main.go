@@ -56,6 +56,7 @@ func main() {
 	check("skip-paths-sse", checkSkipSSE)
 	check("skip-paths-ws", checkSkipWS)
 	check("skip-paths-still-block", checkSkipStillBlocks)
+	check("waf-sse-streams", checkWAFStreamsSSE)
 	check("ip-blocklist", checkIPBlock)
 	check("trusted-ip-bypass", checkTrustedBypass)
 	check("rate-limit", checkRateLimit)
@@ -304,6 +305,33 @@ func checkSkipWS() error {
 	}
 	if reply != "echo: hello" {
 		return fmt.Errorf("ws reply %q", reply)
+	}
+	return nil
+}
+
+// checkWAFStreamsSSE proves SSE streams *through* the WAF with no skip path: since
+// coraza-caddy 2.6.1 the handler flushes through the response-writer Unwrap chain, so
+// the buffering that originally forced waf_skip_paths is gone for SSE. Enforcement on
+// the same service must be intact. A regression here means the bump regressed.
+func checkWAFStreamsSSE() error {
+	_, done, err := mkService(svcSpec("wafsse.test", true, "On"))
+	if err != nil {
+		return err
+	}
+	defer done()
+	time.Sleep(300 * time.Millisecond)
+	if st, _ := edge("GET", "wafsse.test", "/query?q="+sqli, nil, ""); st != 403 {
+		return fmt.Errorf("WAF should still block on the streaming service, got %d", st)
+	}
+	first, last, n, err := streamSSE("wafsse.test", "/sse")
+	if err != nil {
+		return err
+	}
+	if n < 5 {
+		return fmt.Errorf("expected ≥5 SSE events through the WAF, got %d", n)
+	}
+	if spread := last.Sub(first); spread < 800*time.Millisecond {
+		return fmt.Errorf("SSE arrived buffered through the WAF (spread %v) — streaming regressed", spread)
 	}
 	return nil
 }

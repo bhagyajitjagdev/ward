@@ -12,13 +12,13 @@ FROM caddy:2.11.4-builder AS builder
 # Pin every module explicitly (coraza/v3 + the CRS are pinned too, not left transitive)
 # so the compiled versions are exactly what the labels below claim.
 RUN xcaddy build \
-    --with github.com/corazawaf/coraza-caddy/v2@v2.5.0 \
+    --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
     --with github.com/corazawaf/coraza/v3@v3.7.0 \
     --with github.com/corazawaf/coraza-coreruleset/v4@v4.25.0 \
     --with github.com/mholt/caddy-ratelimit@v0.1.0 \
     --with github.com/porech/caddy-maxmind-geolocation@v1.0.3 \
-    --with github.com/hslatman/caddy-crowdsec-bouncer/http@v0.13.1 \
-    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.13.1
+    --with github.com/hslatman/caddy-crowdsec-bouncer/http@v0.14.1 \
+    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.14.1
 
 FROM caddy:2.11.4
 
@@ -36,8 +36,8 @@ LABEL org.opencontainers.image.title="ward-caddy" \
       org.opencontainers.image.version="${WARD_VERSION}" \
       io.ward.caddy="v2.11.4" \
       io.ward.coraza="v3.7.0" \
-      io.ward.coraza_caddy="v2.5.0" \
+      io.ward.coraza_caddy="v2.6.1" \
       io.ward.crs="v4.25.0" \
-      io.ward.crowdsec_bouncer="v0.13.1" \
+      io.ward.crowdsec_bouncer="v0.14.1" \
       io.ward.ratelimit="v0.1.0" \
       io.ward.maxmind_geolocation="v1.0.3"

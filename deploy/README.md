@@ -53,22 +53,19 @@ volume (or `ward_db` in SQLite mode).
 
 ## Streaming: WebSocket & SSE
 
-A WAF sits in the request path and **buffers the response** to inspect it — which breaks streaming:
-Server-Sent Events (SSE) are held until the stream closes, and WebSocket handshakes time out. This
-is structural to the Coraza handler (no `SecRuleEngine`, response-body-access, or rule-removal
-setting avoids it), so Ward handles it by keeping streaming requests *out* of the WAF:
+A WAF sits in the request path and inspects responses, which can break streaming. Ward handles
+the two common cases so nothing needs configuring:
 
-- **WebSocket — automatic.** Any request with `Upgrade: websocket` bypasses the WAF, no config
-  needed. A WAF can't inspect WebSocket frames anyway (only the handshake), so this gives up nothing.
-- **SSE / other streaming — per service.** In the service form, under **WAF → Skip paths**, add the
-  streaming path (e.g. `/events`, `/api/stream`). The WAF is bypassed for that path **and its
-  subpaths**; the request falls straight through to the proxy and streams normally.
+- **WebSocket — automatic bypass.** Any request with `Upgrade: websocket` skips the WAF. A WAF
+  can't inspect WebSocket frames anyway (only the handshake), so this gives up nothing.
+- **Server-Sent Events — streams through the WAF.** Since the edge moved to Coraza-Caddy 2.6.1 the
+  handler flushes as the upstream writes, so SSE endpoints stream normally *with* request
+  inspection and enforcement intact (an e2e check guards this).
 
-**Still enforced on skipped paths:** IP blocklist, geo, and rate-limit — only Coraza is skipped.
-
-**Security note:** a skipped path loses WAF request inspection, so scope it to the exact streaming
-endpoints — don't skip broad prefixes like `/api/*`. Your app's own input validation and the other
-protections still stand.
+**Fallback: skip paths.** If some other streaming or long-poll endpoint still buffers, add it under
+**WAF → Skip paths** in the service form; the WAF is bypassed for that path **and its subpaths**.
+The IP blocklist, geo and rate-limit still apply there — only Coraza is skipped. Scope it to the
+exact endpoints (not `/api/*`): a skipped path loses WAF request inspection.
 
 ## Environment variables
 
