@@ -6,7 +6,10 @@
     {
       "customType": "regex",
       "description": "Pinned xcaddy modules in caddy/Dockerfile + backend/Dockerfile (Dependabot can't see the --with lines)",
-      "fileMatch": ["^caddy/Dockerfile$", "^backend/Dockerfile$"],
+      "managerFilePatterns": [
+        "/^caddy/Dockerfile$/",
+        "/^backend/Dockerfile$/"
+      ],
       "matchStrings": ["--with\\s+(?<depName>github\\.com/[^@\\s]+)@(?<currentValue>v[0-9][^\\s\\\\]*)"],
       "datasourceTemplate": "go"
     }
