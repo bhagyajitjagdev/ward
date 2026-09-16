@@ -35,7 +35,7 @@ jobs:
         # vX.Y.Z; a branch build the short SHA (no tags yet → just the SHA).
         run: echo "value=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -74,7 +74,7 @@ jobs:
       - id: version
         run: echo "value=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}-caddy
           tags: |
