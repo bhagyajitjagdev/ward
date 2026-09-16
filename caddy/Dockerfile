@@ -11,6 +11,10 @@ FROM caddy:2.11.4-builder AS builder
 
 # Pin every module explicitly (coraza/v3 + the CRS are pinned too, not left transitive)
 # so the compiled versions are exactly what the labels below claim.
+# The Go module + build caches are dropped from this layer at the end: they are ~2 GB
+# around a 55 MB binary, and this layer is what CI's BuildKit cache stores and restores.
+# Kept small, it survives the repository's 10 GB Actions-cache limit instead of being
+# evicted between runs (which forces the slow, flake-prone xcaddy rebuild).
 RUN xcaddy build \
     --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
     --with github.com/corazawaf/coraza/v3@v3.7.0 \
@@ -18,7 +22,8 @@ RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@v0.1.0 \
     --with github.com/porech/caddy-maxmind-geolocation@v1.0.3 \
     --with github.com/hslatman/caddy-crowdsec-bouncer/http@v0.14.1 \
-    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.14.1
+    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.14.1 \
+    && rm -rf /go/pkg/mod /root/.cache/go-build
 
 FROM caddy:2.11.4
 

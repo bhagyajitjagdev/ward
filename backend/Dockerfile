@@ -17,13 +17,19 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 COPY --from=ui /ui/dist ./internal/web/dist
-RUN CGO_ENABLED=0 go build -tags embed_ui -ldflags="-s -w -X main.version=${VERSION}" -o /ward ./cmd/ward
+# Same idea for the compile step: drop the ~200 MB build cache, keep the 15 MB binary.
+RUN CGO_ENABLED=0 go build -tags embed_ui -ldflags="-s -w -X main.version=${VERSION}" -o /ward ./cmd/ward \
+    && rm -rf /root/.cache/go-build
 
 # 2b. Build the plugin-enabled Caddy — SAME pins as caddy/Dockerfile (kept in lockstep
 #     by internal/edge/versions_test.go). Ward uses it to `caddy adapt` a service's
 #     advanced Caddyfile fragment, so plugin directives (rate_limit, coraza_waf, …) work
 #     in fragments, matching the edge — not just core directives.
 FROM caddy:2.11.4-builder AS caddybuild
+# The Go module + build caches are dropped from this layer at the end: they are ~2 GB
+# around a 55 MB binary, and this layer is what CI's BuildKit cache stores and restores.
+# Kept small, it survives the repository's 10 GB Actions-cache limit instead of being
+# evicted between runs (which forces the slow, flake-prone xcaddy rebuild).
 RUN xcaddy build \
     --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
     --with github.com/corazawaf/coraza/v3@v3.7.0 \
@@ -31,7 +37,8 @@ RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@v0.1.0 \
     --with github.com/porech/caddy-maxmind-geolocation@v1.0.3 \
     --with github.com/hslatman/caddy-crowdsec-bouncer/http@v0.14.1 \
-    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.14.1
+    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.14.1 \
+    && rm -rf /go/pkg/mod /root/.cache/go-build
 
 # 3. Runtime. Runs as root so it can write the shared volumes (db/geoip/certs);
 #    non-root hardening (entrypoint chown + gosu) is a documented follow-up.
