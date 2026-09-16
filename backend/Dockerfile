@@ -2,7 +2,7 @@
 # Build with the repo root as context:  docker build -f backend/Dockerfile .
 
 # 1. Build the UI.
-FROM node:22-alpine AS ui
+FROM node:24-alpine AS ui
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json ui/.npmrc ./
 RUN npm ci
