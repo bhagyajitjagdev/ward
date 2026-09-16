@@ -19,7 +19,7 @@ jobs:
   ward:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history + tags so `git describe` resolves a real version
       - uses: docker/setup-buildx-action@v3
@@ -60,7 +60,7 @@ jobs:
   caddy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history + tags so `git describe` resolves a real version
       - uses: docker/setup-buildx-action@v3
