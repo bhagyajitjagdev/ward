@@ -12,9 +12,12 @@ docker compose -p wardtest -f test/e2e.compose.yml up --build --exit-code-from t
 docker compose -p wardtest -f test/e2e.compose.yml down -v
 ```
 
-The **tester's exit code is the result** (0 = every check passed). CI runs exactly this
+The **tester's exit code is the result** (0 = every check passed). CI runs the same compose file
 (`.github/workflows/e2e.yml`) on every push and PR — including Renovate's dependency bumps — so a
-Caddy/Coraza/CRS/module update that breaks the edge fails there before it ships.
+Caddy/Coraza/CRS/module update that breaks the edge fails there before it ships. The one difference:
+CI prebuilds the two images (`ward-e2e-caddy:local`, `ward-e2e-ward:local`) with BuildKit's GitHub
+Actions layer cache, shared with the release workflow, and runs `up --no-build` — so the xcaddy stage
+is rebuilt only when a pin changes. Locally, `up --build` builds and tags the same images.
 
 ## What it checks
 

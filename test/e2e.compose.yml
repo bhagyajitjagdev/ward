@@ -10,6 +10,9 @@
 services:
   caddy:
     build: ../caddy # custom Caddy+Coraza image
+    # Fixed tag so CI can prebuild it (with a layer cache) and run `up --no-build`;
+    # a local `up --build` simply builds and tags it the same way.
+    image: ward-e2e-caddy:local
     command: caddy run --config /etc/caddy/bootstrap.json
     volumes:
       - ./bootstrap.json:/etc/caddy/bootstrap.json:ro
@@ -34,6 +37,7 @@ services:
     build:
       context: .. # repo root — backend/Dockerfile COPYs both backend/ and ui/
       dockerfile: backend/Dockerfile
+    image: ward-e2e-ward:local # see caddy above
     user: "0:0" # test-only: read Caddy's root-written audit log (deploy aligns perms)
     environment:
       WARD_CADDY_ADMIN: http://caddy:2019

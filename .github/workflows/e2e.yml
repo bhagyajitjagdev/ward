@@ -5,6 +5,14 @@ name: e2e
 # dependency bump — Caddy, Coraza, the CRS, a module — that breaks proxying, the
 # WAF, exclusions, streaming, blocks, rate-limits, HTTP controls, etc. fails here
 # before it ships. Runs on every push to main and every PR (incl. Renovate's).
+#
+# The two images are built here with BuildKit's GitHub-Actions layer cache, in the
+# same cache scopes the release workflow uses, so the expensive xcaddy stage (and
+# the npm/go module downloads) is rebuilt only when its inputs change — not on
+# every run. That also shrinks the window for the transient sum.golang.org errors
+# that have failed otherwise-fine runs. Compose then runs with --no-build against
+# the loaded images; a missing image is an explicit error, never a silent rebuild.
+# Locally the harness still builds via compose (`up --build`) — see test/README.md.
 
 on:
   push:
@@ -16,10 +24,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the edge image (cached)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./caddy
+          load: true
+          tags: ward-e2e-caddy:local
+          cache-from: type=gha,scope=caddy
+          cache-to: type=gha,mode=max,scope=caddy
+      - name: Build the control-plane image (cached)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backend/Dockerfile
+          load: true
+          tags: ward-e2e-ward:local
+          cache-from: type=gha,scope=ward
+          cache-to: type=gha,mode=max,scope=ward
       - name: Run the e2e harness
         run: >
           docker compose -p wardtest -f test/e2e.compose.yml up
-          --build --exit-code-from tester --abort-on-container-exit
+          --no-build --exit-code-from tester --abort-on-container-exit
       - name: Dump logs on failure
         if: failure()
         run: docker compose -p wardtest -f test/e2e.compose.yml logs --no-color
