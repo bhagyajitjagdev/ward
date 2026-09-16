@@ -220,7 +220,9 @@ function EventSheet({
   })
   const block = useMutation({
     mutationFn: (e: WafEvent) =>
-      api.createBlock({ cidr: `${e.client_ip}/32`, scope: "global", mode: "block", reason: `WAF event — rule ${e.rule_id}` }),
+      // The bare address: Caddy's remote_ip matcher takes single IPs, and a hardcoded
+      // "/32" is only right for IPv4 (on an IPv6 client it's ~an entire ISP allocation).
+      api.createBlock({ cidr: e.client_ip, scope: "global", mode: "block", reason: `WAF event — rule ${e.rule_id}` }),
     onSuccess: (_x, e) => {
       qc.invalidateQueries({ queryKey: ["blocklist"] })
       toast.success("IP blocked", { description: `${e.client_ip} blocked at the edge` })

@@ -471,6 +471,13 @@ export function ServiceFormFields({
                 ))}
               </SelectContent>
             </Select>
+            {form.tlsMode === "managed" && form.hostnames.some((h) => h.includes("*")) && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                A wildcard hostname can't get a Let's Encrypt certificate here — that needs the DNS-01
+                challenge, which the edge image doesn't include. Upload a wildcard certificate (Custom) or use
+                the internal CA.
+              </p>
+            )}
           </Field>
           <div className="space-y-3">
             <ToggleRow

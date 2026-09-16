@@ -91,6 +91,7 @@ export type AccessEvent = S["AccessEvent"]
 export type AccessStats = S["AccessStats"]
 export type CrowdSecStatus = S["CrowdSecStatus"]
 export type CrowdSecDecision = S["CrowdSecDecision"]
+export type ConfigSnapshot = S["ConfigSnapshot"]
 
 export type WafEventQuery = NonNullable<paths["/waf-events"]["get"]["parameters"]["query"]>
 export type AccessQuery = NonNullable<paths["/access-events"]["get"]["parameters"]["query"]>
@@ -201,6 +202,12 @@ export const api = {
   revokeApiToken: (id: string) =>
     client.DELETE("/api-tokens/{id}", { params: { path: { id } } }).then(unwrap),
   listAuditLog: (limit?: number) => client.GET("/audit-log", { params: { query: { limit } } }).then(unwrap),
+
+  // config snapshots + rollback (restores the DB, then re-applies — durable)
+  listSnapshots: () => client.GET("/config-snapshots").then(unwrap),
+  getSnapshot: (id: string) => client.GET("/config-snapshots/{id}", { params: { path: { id } } }).then(unwrap),
+  rollback: (id: string) =>
+    client.POST("/config-snapshots/{id}/rollback", { params: { path: { id } } }).then(unwrap),
 
   // settings
   getSettings: () => client.GET("/settings").then(unwrap),

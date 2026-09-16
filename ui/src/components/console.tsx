@@ -144,13 +144,3 @@ export function ModeToggle({ value, onChange }: { value: RuleMode; onChange: (v:
     </div>
   )
 }
-
-// Placeholder for screens still being designed.
-export function Soon({ note }: { note: string }) {
-  return (
-    <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed bg-card/40 px-6 text-center">
-      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Being designed</div>
-      <p className="mt-2 max-w-sm text-sm text-muted-foreground">{note}</p>
-    </div>
-  )
-}

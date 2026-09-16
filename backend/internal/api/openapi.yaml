@@ -766,7 +766,13 @@ paths:
   /config-snapshots/{id}/rollback:
     post:
       operationId: rollback
-      summary: Push a snapshot's config back to the edge
+      summary: Restore the config a snapshot was taken from
+      description: >-
+        Restores the DB (the source of truth) to the snapshot's declarative state — services, WAF
+        exclusions and custom rules, blocklist, rate-limits, geo rules, trusted IPs, and the
+        config-shaping settings — then regenerates and pushes the edge config and records a new
+        active snapshot. Durable: the drift reconciler keeps it. Uploaded certs, the GeoIP database
+        and deployment env are not part of a snapshot.
       parameters: [{ $ref: "#/components/parameters/id" }]
       responses:
         "200":
@@ -779,6 +785,11 @@ paths:
                 properties:
                   status: { type: string }
                   snapshot_id: { type: string }
+        "409":
+          description: The snapshot predates durable rollback (restorable=false) and holds no state to restore.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /settings:
@@ -857,6 +868,11 @@ paths:
         - { name: domain, in: path, required: true, schema: { type: string } }
       responses:
         "204": { description: Removed }
+        "409":
+          description: An enabled tls_mode=custom service still relies on this certificate (no other uploaded cert covers its hostname).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
 components:
@@ -1484,11 +1500,17 @@ components:
 
     ConfigSnapshot:
       type: object
-      required: [id, active, created_at]
+      required: [id, active, restorable, created_at]
       properties:
         id: { type: string }
-        note: { type: string }
-        active: { type: boolean }
+        note: { type: string, description: "Set on rollback-created snapshots (\"rollback to <id>\")." }
+        active: { type: boolean, description: The config the edge is running now. }
+        restorable:
+          type: boolean
+          description: >-
+            Whether the snapshot carries Ward's declarative state, so a rollback can restore the DB
+            from it. Snapshots from before that was recorded hold only the rendered Caddy JSON and
+            are refused (409) by rollback.
         created_at: { type: string, format: date-time }
         caddy_json:
           type: string

@@ -103,27 +103,87 @@ func (s *Store) ListAccessEvents(ctx context.Context, f AccessFilter) ([]model.A
 	return out, nil
 }
 
-// LeanAccess is a projection for aggregation (bounded window → aggregate in Go).
-type LeanAccess struct {
-	TS         time.Time `bun:"ts"`
-	Status     int       `bun:"status"`
-	DurationMs float64   `bun:"duration_ms"`
-	Bytes      int64     `bun:"bytes"`
+// AccessSummary is the whole-window rollup the stats endpoint serves, computed
+// in SQL so the raw window is never pulled into Go memory (architecture §6: the
+// dashboards must not scan raw rows client-side).
+type AccessSummary struct {
+	Total int64   `bun:"total"`
+	Bytes int64   `bun:"bytes"`
+	AvgMs float64 `bun:"avg_ms"`
+	S2xx  int64   `bun:"s2xx"`
+	S3xx  int64   `bun:"s3xx"`
+	S4xx  int64   `bun:"s4xx"`
+	S5xx  int64   `bun:"s5xx"`
 }
 
-// LeanAccessSince returns lean events since `since` (optionally one service), oldest first.
-func (s *Store) LeanAccessSince(ctx context.Context, since time.Time, serviceID string) ([]LeanAccess, error) {
-	var rows []LeanAccess
-	q := s.DB.NewSelect().Table("access_events").
-		Column("ts", "status", "duration_ms", "bytes").
-		Where("ts > ?", since).Order("ts ASC")
+// AccessSummarySince aggregates the events since `since` (optionally one service).
+func (s *Store) AccessSummarySince(ctx context.Context, since time.Time, serviceID string) (AccessSummary, error) {
+	var out AccessSummary
+	q := s.DB.NewSelect().TableExpr("access_events").
+		ColumnExpr("COUNT(*) AS total").
+		ColumnExpr("CAST(COALESCE(SUM(bytes), 0) AS BIGINT) AS bytes").
+		ColumnExpr("CAST(COALESCE(AVG(duration_ms), 0) AS FLOAT) AS avg_ms").
+		ColumnExpr("CAST(COALESCE(SUM(CASE WHEN status BETWEEN 200 AND 299 THEN 1 ELSE 0 END), 0) AS BIGINT) AS s2xx").
+		ColumnExpr("CAST(COALESCE(SUM(CASE WHEN status BETWEEN 300 AND 399 THEN 1 ELSE 0 END), 0) AS BIGINT) AS s3xx").
+		ColumnExpr("CAST(COALESCE(SUM(CASE WHEN status BETWEEN 400 AND 499 THEN 1 ELSE 0 END), 0) AS BIGINT) AS s4xx").
+		ColumnExpr("CAST(COALESCE(SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END), 0) AS BIGINT) AS s5xx").
+		Where("ts > ?", since)
 	if serviceID != "" {
 		q = q.Where("service_id = ?", serviceID)
 	}
-	if err := q.Scan(ctx, &rows); err != nil {
-		return nil, err
+	err := q.Scan(ctx, &out)
+	return out, err
+}
+
+// AccessP95Since returns the 95th-percentile request duration (ms) over the window,
+// via an ordered LIMIT/OFFSET seek — portable and never materialises the window.
+// total is the window's row count (from AccessSummarySince).
+func (s *Store) AccessP95Since(ctx context.Context, since time.Time, serviceID string, total int64) (float64, error) {
+	if total <= 0 {
+		return 0, nil
 	}
-	return rows, nil
+	offset := int(0.95 * float64(total))
+	if offset >= int(total) {
+		offset = int(total) - 1
+	}
+	var v float64
+	q := s.DB.NewSelect().TableExpr("access_events").ColumnExpr("duration_ms").
+		Where("ts > ?", since).OrderExpr("duration_ms ASC").Limit(1).Offset(offset)
+	if serviceID != "" {
+		q = q.Where("service_id = ?", serviceID)
+	}
+	err := q.Scan(ctx, &v)
+	return v, err
+}
+
+// AccessBucket is one time-series point: requests + 5xx in a bucket starting at
+// Bucket (Unix seconds).
+type AccessBucket struct {
+	Bucket   int64 `bun:"bucket"`
+	Requests int64 `bun:"requests"`
+	Errors   int64 `bun:"errors"`
+}
+
+// AccessSeriesSince buckets the window into bucketSec-wide points (GROUP BY in
+// SQL; empty buckets are simply absent). Oldest first.
+func (s *Store) AccessSeriesSince(ctx context.Context, since time.Time, serviceID string, bucketSec int64) ([]AccessBucket, error) {
+	if bucketSec <= 0 {
+		bucketSec = 60
+	}
+	bucket := s.bucketExpr("ts", bucketSec)
+	var rows []AccessBucket
+	q := s.DB.NewSelect().TableExpr("access_events").
+		ColumnExpr(bucket+" AS bucket").
+		ColumnExpr("COUNT(*) AS requests").
+		ColumnExpr("CAST(COALESCE(SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END), 0) AS BIGINT) AS errors").
+		Where("ts > ?", since).
+		GroupExpr(bucket).
+		OrderExpr("bucket ASC")
+	if serviceID != "" {
+		q = q.Where("service_id = ?", serviceID)
+	}
+	err := q.Scan(ctx, &rows)
+	return rows, err
 }
 
 // AccessPathCount is a request count for one path.

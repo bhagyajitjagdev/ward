@@ -35,11 +35,11 @@ func customRoot(dir string) string { return filepath.Join(dir, "custom") }
 // Cert describes one uploaded certificate on the volume. The PEM paths are for
 // config-gen only (load_files); they never leave the process (json:"-").
 type Cert struct {
-	Domain    string    `json:"domain"`     // folder name = the host it secures
-	Subjects  []string  `json:"subjects"`   // CN + DNS SANs parsed from the cert
+	Domain    string    `json:"domain"`            // folder name = the host it secures
+	Subjects  []string  `json:"subjects"`          // CN + DNS SANs parsed from the cert
 	IPSANs    []string  `json:"ip_sans,omitempty"` // IP address SANs — unreachable under strict SNI
-	NotAfter  time.Time `json:"not_after"`  // expiry
-	UpdatedAt time.Time `json:"updated_at"` // cert file mtime
+	NotAfter  time.Time `json:"not_after"`         // expiry
+	UpdatedAt time.Time `json:"updated_at"`        // cert file mtime
 	CertPath  string    `json:"-"`
 	KeyPath   string    `json:"-"`
 }
@@ -211,16 +211,31 @@ func SANMatches(host, san string) bool {
 }
 
 // Covers reports whether any uploaded cert secures host (by CN/SAN, incl. wildcards).
-func Covers(dir, host string) bool {
+func Covers(dir, host string) bool { return CoversExcept(dir, host, "") }
+
+// CoversExcept is Covers ignoring the cert stored under exceptDomain — "would this
+// host still be secured if that cert were removed?" (the delete guard).
+func CoversExcept(dir, host, exceptDomain string) bool {
 	list, err := List(dir)
 	if err != nil {
 		return false
 	}
 	for _, c := range list {
-		for _, s := range c.Subjects {
-			if SANMatches(host, s) {
-				return true
-			}
+		if exceptDomain != "" && c.Domain == exceptDomain {
+			continue
+		}
+		if c.Secures(host) {
+			return true
+		}
+	}
+	return false
+}
+
+// Secures reports whether this cert's CN/SANs cover host (wildcard-aware).
+func (c Cert) Secures(host string) bool {
+	for _, s := range c.Subjects {
+		if SANMatches(host, s) {
+			return true
 		}
 	}
 	return false

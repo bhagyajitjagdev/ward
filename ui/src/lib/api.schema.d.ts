@@ -692,7 +692,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Push a snapshot's config back to the edge */
+        /**
+         * Restore the config a snapshot was taken from
+         * @description Restores the DB (the source of truth) to the snapshot's declarative state — services, WAF exclusions and custom rules, blocklist, rate-limits, geo rules, trusted IPs, and the config-shaping settings — then regenerates and pushes the edge config and records a new active snapshot. Durable: the drift reconciler keeps it. Uploaded certs, the GeoIP database and deployment env are not part of a snapshot.
+         */
         post: operations["rollback"];
         delete?: never;
         options?: never;
@@ -1258,8 +1261,12 @@ export interface components {
         };
         ConfigSnapshot: {
             id: string;
+            /** @description Set on rollback-created snapshots ("rollback to <id>"). */
             note?: string;
+            /** @description The config the edge is running now. */
             active: boolean;
+            /** @description Whether the snapshot carries Ward's declarative state, so a rollback can restore the DB from it. Snapshots from before that was recorded hold only the rendered Caddy JSON and are refused (409) by rollback. */
+            restorable: boolean;
             /** Format: date-time */
             created_at: string;
             /** @description Present only when fetching a single snapshot. */
@@ -2570,6 +2577,15 @@ export interface operations {
                     };
                 };
             };
+            /** @description The snapshot predates durable rollback (restorable=false) and holds no state to restore. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             default: components["responses"]["Error"];
         };
     };
@@ -2703,6 +2719,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description An enabled tls_mode=custom service still relies on this certificate (no other uploaded cert covers its hostname). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
             default: components["responses"]["Error"];
         };

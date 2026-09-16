@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/bhagyajitjagdev/ward/backend/internal/caddy"
 	"github.com/bhagyajitjagdev/ward/backend/internal/store"
 )
 
@@ -42,9 +43,15 @@ func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "snapshot not found"})
 			return
 		}
+		if errors.Is(err, caddy.ErrNotRestorable) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	// The rollback restored the DB and re-applied, so the edge and the source of
+	// truth agree — the reconciler keeps it, unlike a live-edge-only reload.
 	h.audit(r, "config.rollback", "snapshot:"+id, "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "rolled back", "snapshot_id": id})
 }

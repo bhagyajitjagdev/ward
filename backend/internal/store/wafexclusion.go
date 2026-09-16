@@ -28,6 +28,8 @@ type wafExclusionRow struct {
 	CreatedAt time.Time `bun:"created_at,notnull"`
 }
 
+func joinMethods(m []string) string { return strings.Join(m, ",") }
+
 func splitMethods(s string) []string {
 	if s == "" {
 		return nil
@@ -54,7 +56,7 @@ func (s *Store) CreateExclusion(ctx context.Context, in model.WAFExclusion) (mod
 	row := wafExclusionRow{
 		ID: id.String(), Scope: orDefault(in.Scope, "service"), ServiceID: in.ServiceID,
 		RuleID: in.RuleID, Path: in.Path, PathMatch: orDefault(in.PathMatch, "prefix"),
-		Methods: strings.Join(in.Methods, ","), Target: in.Target, SecLang: in.SecLang,
+		Methods: joinMethods(in.Methods), Target: in.Target, SecLang: in.SecLang,
 		State: orDefault(in.State, "active"), Source: orDefault(in.Source, "manual"),
 		CreatedAt: time.Now().UTC(),
 	}

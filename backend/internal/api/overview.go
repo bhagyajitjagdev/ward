@@ -30,12 +30,24 @@ type serviceDetections struct {
 	Detections int    `json:"detections_24h"`
 }
 
+// overview aggregates the last 24h in SQL (hourly buckets + per-service counts) —
+// never the raw rows in memory, so it stays flat as the access log grows.
 func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// 24 hourly buckets ending at the current hour.
-	base := time.Now().Truncate(time.Hour).Add(-23 * time.Hour)
+	base := time.Now().UTC().Truncate(time.Hour).Add(-23 * time.Hour)
 
-	events, err := h.store.LeanWAFEventsSince(ctx, base)
+	wafSeries, err := h.store.WAFSeriesSince(ctx, base, 3600)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	byService, err := h.store.WAFCountByServiceSince(ctx, base)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	accessSeries, err := h.store.AccessSeriesSince(ctx, base, "", 3600)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -46,11 +58,6 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	blocks, err := h.store.ListActiveBlocks(ctx)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	access, err := h.store.LeanAccessSince(ctx, base, "")
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -70,37 +77,25 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 	for i := range buckets {
 		buckets[i] = activityBucket{Hour: base.Add(time.Duration(i) * time.Hour)}
 	}
-	byService := map[string]int{}
-	for _, e := range events {
-		if e.IsAnomalyScore {
-			continue // count real detections, not the 949xxx anomaly aggregators
-		}
-		resp.Detections24h++
-		if e.IsInterrupted {
-			resp.Blocked24h++
-		}
-		if e.ServiceID != nil {
-			byService[*e.ServiceID]++
-		}
-		idx := int(e.TS.Truncate(time.Hour).Sub(base) / time.Hour)
-		if idx >= 0 && idx < 24 {
-			buckets[idx].Detections++
-			if e.IsInterrupted {
-				buckets[idx].Blocked++
-			}
+	idx := func(bucketUnix int64) int { return int((bucketUnix - base.Unix()) / 3600) }
+	for _, b := range wafSeries {
+		resp.Detections24h += int(b.Detections)
+		resp.Blocked24h += int(b.Blocked)
+		if i := idx(b.Bucket); i >= 0 && i < 24 {
+			buckets[i].Detections += int(b.Detections)
+			buckets[i].Blocked += int(b.Blocked)
 		}
 	}
-	for _, e := range access {
-		resp.Requests24h++
-		idx := int(e.TS.Truncate(time.Hour).Sub(base) / time.Hour)
-		if idx >= 0 && idx < 24 {
-			buckets[idx].Requests++
+	for _, b := range accessSeries {
+		resp.Requests24h += int(b.Requests)
+		if i := idx(b.Bucket); i >= 0 && i < 24 {
+			buckets[i].Requests += int(b.Requests)
 		}
 	}
 	resp.Activity = buckets
 	resp.ByService = make([]serviceDetections, 0, len(byService))
-	for id, n := range byService {
-		resp.ByService = append(resp.ByService, serviceDetections{ServiceID: id, Detections: n})
+	for _, c := range byService {
+		resp.ByService = append(resp.ByService, serviceDetections{ServiceID: c.ServiceID, Detections: int(c.Count)})
 	}
 
 	writeJSON(w, http.StatusOK, resp)

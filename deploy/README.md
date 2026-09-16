@@ -140,8 +140,10 @@ TOKEN=$(curl -s localhost:8080/api/auth/login -H 'content-type: application/json
   -d '{"username":"owner","password":"…"}' | jq -r .token)
 H="authorization: Bearer $TOKEN"
 
-# option 1 — roll the live config back to the last-good snapshot
-curl -s "$H" localhost:8080/api/config-snapshots            # find an id
+# option 1 — roll back to the last-good snapshot (also the Snapshots screen in the UI).
+# This restores Ward's own config to that point and re-applies it, so it sticks —
+# every change since (the bad rule included) is undone, not just hidden from the edge.
+curl -s "$H" localhost:8080/api/config-snapshots            # find an id (restorable: true)
 curl -s "$H" -X POST localhost:8080/api/config-snapshots/<id>/rollback
 
 # option 2 — delete the offending rule, Ward reapplies

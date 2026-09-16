@@ -10,11 +10,18 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -63,6 +70,8 @@ func main() {
 	check("path-routing", checkPathRouting)
 	check("edge-versions", checkEdgeVersions)
 	check("snapshots", checkSnapshots)
+	check("rollback", checkRollback)
+	check("tls-guards", checkTLSGuards)
 	check("snapshot-export", checkSnapshotAndExport)
 	check("metrics", checkMetrics)
 	check("log-errors-only", checkLogErrorsOnly)
@@ -385,8 +394,8 @@ func checkTrustedBypass() error {
 	defer api("DELETE", "/blocklist/"+fmt.Sprint(blk["id"]), nil)
 	// Now the block AND the WAF are bypassed for the trusted IP.
 	return retry(15, 300*time.Millisecond, func() error {
-		s1, body := edge("GET", "trust.test", "/", nil, "")            // block bypassed → reaches upstream
-		s2, _ := edge("GET", "trust.test", "/query?q="+sqli, nil, "")  // WAF bypassed → not 403
+		s1, body := edge("GET", "trust.test", "/", nil, "")           // block bypassed → reaches upstream
+		s2, _ := edge("GET", "trust.test", "/query?q="+sqli, nil, "") // WAF bypassed → not 403
 		if s1 != 200 || !strings.Contains(body, "wardtest-upstream") {
 			return fmt.Errorf("trusted IP should bypass the block, got %d %q", s1, trim(body))
 		}
@@ -822,6 +831,185 @@ func checkSnapshots() error {
 		return fmt.Errorf("expected config snapshots to exist")
 	}
 	return nil
+}
+
+// checkRollback proves a rollback is durable: it restores Ward's own state (the DB
+// the reconciler regenerates from), not just the live edge. A service created after
+// the snapshot must be gone from Ward *and* unrouted, the earlier one still served,
+// and the rollback recorded as the new active snapshot.
+func checkRollback() error {
+	idA, doneA, err := mkService(hostSpec("rb-a.test", upstream))
+	if err != nil {
+		return err
+	}
+	defer doneA()
+	if err := retry(10, 300*time.Millisecond, func() error {
+		st, body := edge("GET", "rb-a.test", "/", nil, "")
+		if st != 200 || !strings.Contains(body, "wardtest-upstream") {
+			return fmt.Errorf("A before: %d %q", st, trim(body))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	s1, err := activeSnapshot()
+	if err != nil {
+		return err
+	}
+	if !s1.Restorable {
+		return fmt.Errorf("the active snapshot should be restorable: %+v", s1)
+	}
+
+	idB, doneB, err := mkService(hostSpec("rb-b.test", upstream))
+	if err != nil {
+		return err
+	}
+	defer doneB() // a 404 after the rollback — harmless
+	if err := retry(10, 300*time.Millisecond, func() error {
+		st, body := edge("GET", "rb-b.test", "/", nil, "")
+		if st != 200 || !strings.Contains(body, "wardtest-upstream") {
+			return fmt.Errorf("B before: %d %q", st, trim(body))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if st, b := api("POST", "/config-snapshots/"+s1.ID+"/rollback", nil); st != 200 {
+		return fmt.Errorf("rollback → %d %s", st, trim(string(b)))
+	}
+	// Ward's state: B undone, A intact (the DB was restored, so the drift reconciler
+	// will keep regenerating exactly this).
+	if st, _ := api("GET", "/services/"+idB, nil); st != 404 {
+		return fmt.Errorf("service B should be gone from Ward after the rollback, GET → %d", st)
+	}
+	if st, _ := api("GET", "/services/"+idA, nil); st != 200 {
+		return fmt.Errorf("service A should survive the rollback, GET → %d", st)
+	}
+	// The edge: B unrouted (an unmatched host gets Caddy's empty default), A served.
+	if err := retry(10, 300*time.Millisecond, func() error {
+		if _, body := edge("GET", "rb-b.test", "/", nil, ""); strings.Contains(body, "wardtest-upstream") {
+			return fmt.Errorf("B still routed after rollback")
+		}
+		st, body := edge("GET", "rb-a.test", "/", nil, "")
+		if st != 200 || !strings.Contains(body, "wardtest-upstream") {
+			return fmt.Errorf("A after: %d %q", st, trim(body))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	s2, err := activeSnapshot()
+	if err != nil {
+		return err
+	}
+	if s2.ID == s1.ID || !strings.Contains(s2.Note, "rollback") {
+		return fmt.Errorf("the rollback should record a new active snapshot noting it, got %+v", s2)
+	}
+	return nil
+}
+
+type snapshotMeta struct {
+	ID         string `json:"id"`
+	Active     bool   `json:"active"`
+	Restorable bool   `json:"restorable"`
+	Note       string `json:"note"`
+}
+
+func activeSnapshot() (snapshotMeta, error) {
+	st, b := api("GET", "/config-snapshots", nil)
+	if st != 200 {
+		return snapshotMeta{}, fmt.Errorf("list snapshots → %d %s", st, trim(string(b)))
+	}
+	var snaps []snapshotMeta
+	if err := json.Unmarshal(b, &snaps); err != nil {
+		return snapshotMeta{}, err
+	}
+	for _, s := range snaps {
+		if s.Active {
+			return s, nil
+		}
+	}
+	return snapshotMeta{}, fmt.Errorf("no active snapshot among %d", len(snaps))
+}
+
+// checkTLSGuards covers the two save-time TLS guards: a certificate a tls_mode=custom
+// service still needs can't be deleted (409), and a wildcard hostname can't use
+// managed TLS (400 — no DNS-01 in the edge image). The custom service really loads the
+// uploaded cert through the shared certs volume: its HTTP→HTTPS redirect proves the
+// config applied.
+func checkTLSGuards() error {
+	certPEM, keyPEM, err := selfSigned("certguard.test")
+	if err != nil {
+		return err
+	}
+	if st, b := api("POST", "/certificates", map[string]any{"domain": "certguard.test", "cert_pem": certPEM, "key_pem": keyPEM}); st != 201 {
+		return fmt.Errorf("upload cert → %d %s", st, trim(string(b)))
+	}
+	spec := svcSpec("certguard.test", false, "")
+	spec["tls_mode"] = "custom"
+	_, done, err := mkService(spec)
+	if err != nil {
+		return err
+	}
+	defer done()
+	defer api("DELETE", "/certificates/certguard.test", nil)
+	if err := retry(10, 300*time.Millisecond, func() error {
+		st, _ := edge("GET", "certguard.test", "/", nil, "")
+		if st != 302 {
+			return fmt.Errorf("custom-TLS service should redirect HTTP→HTTPS once applied, got %d", st)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if st, b := api("DELETE", "/certificates/certguard.test", nil); st != 409 {
+		return fmt.Errorf("deleting an in-use cert should be refused with 409, got %d %s", st, trim(string(b)))
+	}
+	done()
+	if st, b := api("DELETE", "/certificates/certguard.test", nil); st != 204 {
+		return fmt.Errorf("deleting the cert once unused → %d %s", st, trim(string(b)))
+	}
+
+	wild := svcSpec("*.wild.test", false, "")
+	wild["tls_mode"] = "managed"
+	if st, b := api("POST", "/services", wild); st != 400 {
+		if st == 201 {
+			var svc map[string]any
+			_ = json.Unmarshal(b, &svc)
+			api("DELETE", "/services/"+fmt.Sprint(svc["id"]), nil)
+		}
+		return fmt.Errorf("wildcard + managed TLS should be rejected (400), got %d %s", st, trim(string(b)))
+	}
+	return nil
+}
+
+// selfSigned returns a throwaway PEM cert + key for host (ECDSA P-256, 1 day).
+func selfSigned(host string) (certPEM, keyPEM string, err error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return "", "", err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: host, Organization: []string{"wardtest"}},
+		DNSNames:     []string{host},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return "", "", err
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return "", "", err
+	}
+	certPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	keyPEM = string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+	return certPEM, keyPEM, nil
 }
 
 // ── payload + edge/ws/sse helpers ───────────────────────────────────────────────

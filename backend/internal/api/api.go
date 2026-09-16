@@ -254,6 +254,17 @@ func (h *Handler) checkServiceHostnames(ctx context.Context, in *model.Service, 
 	in.PublicHostnames = out
 	in.PublicHostname = out[0]
 
+	// A wildcard needs the DNS-01 challenge, and the edge image compiles in no DNS
+	// provider module — Caddy would fail issuance forever (and burn ACME rate limits).
+	// The internal CA and an uploaded wildcard cert both work; only "managed" can't.
+	if in.TLSMode == "managed" {
+		for _, hn := range out {
+			if strings.Contains(hn, "*") {
+				return http.StatusBadRequest, "wildcard hostname " + hn + " can't use managed (Let's Encrypt) TLS: wildcards need a DNS-01 challenge, which the edge image doesn't include — use tls_mode 'custom' (upload a wildcard cert) or 'internal'"
+			}
+		}
+	}
+
 	dup, err := h.store.HostnamesInUse(ctx, out, excludeID)
 	if err != nil {
 		return http.StatusInternalServerError, err.Error()
