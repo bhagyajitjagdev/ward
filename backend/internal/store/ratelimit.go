@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,6 +67,19 @@ func (s *Store) UpdateRateLimit(ctx context.Context, id string, in model.RateLim
 		return model.RateLimit{}, false, err
 	}
 	return out.toModel(), true, nil
+}
+
+// GetRateLimit returns one rate limit; found=false when the id doesn't exist.
+func (s *Store) GetRateLimit(ctx context.Context, id string) (model.RateLimit, bool, error) {
+	var row rateLimitRow
+	err := s.DB.NewSelect().Model(&row).Where("id = ?", id).Limit(1).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.RateLimit{}, false, nil
+	}
+	if err != nil {
+		return model.RateLimit{}, false, err
+	}
+	return row.toModel(), true, nil
 }
 
 // ListRateLimits returns all rate limits, newest first.

@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,6 +71,19 @@ func (s *Store) UpdateBlock(ctx context.Context, id string, in model.BlockedIP) 
 		return model.BlockedIP{}, false, err
 	}
 	return out.toModel(), true, nil
+}
+
+// GetBlock returns one block; found=false when the id doesn't exist.
+func (s *Store) GetBlock(ctx context.Context, id string) (model.BlockedIP, bool, error) {
+	var row blockRow
+	err := s.DB.NewSelect().Model(&row).Where("id = ?", id).Limit(1).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.BlockedIP{}, false, nil
+	}
+	if err != nil {
+		return model.BlockedIP{}, false, err
+	}
+	return row.toModel(), true, nil
 }
 
 // ListBlocks returns all blocks, newest first.

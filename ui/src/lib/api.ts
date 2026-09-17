@@ -75,14 +75,18 @@ export type WafExclusion = S["WafExclusion"]
 export type ExclusionInput = S["ExclusionInput"]
 export type WafCustomRule = S["WafCustomRule"]
 export type WafCustomRuleInput = S["WafCustomRuleInput"]
+export type WafCustomRuleUpdate = S["WafCustomRuleUpdate"]
 export type Block = S["Block"]
 export type BlockInput = S["BlockInput"]
+export type BlockUpdate = S["BlockUpdate"]
 export type TrustedIP = S["TrustedIP"]
 export type TrustedIPInput = S["TrustedIPInput"]
 export type RateLimit = S["RateLimit"]
 export type RateLimitInput = S["RateLimitInput"]
+export type RateLimitUpdate = S["RateLimitUpdate"]
 export type GeoRule = S["GeoRule"]
 export type GeoRuleInput = S["GeoRuleInput"]
+export type GeoRuleUpdate = S["GeoRuleUpdate"]
 export type GeoIPStatus = S["GeoIPStatus"]
 export type ApiToken = S["ApiToken"]
 export type AuditEntry = S["AuditEntry"]
@@ -112,7 +116,7 @@ export const api = {
   // dashboard
   overview: () => client.GET("/overview").then(unwrap),
 
-  // services
+  // services (PATCH endpoints are JSON Merge Patches: send only what changes; null clears)
   listServices: () => client.GET("/services").then(unwrap),
   getService: (id: string) => client.GET("/services/{id}", { params: { path: { id } } }).then(unwrap),
   createService: (input: ServiceInput) => client.POST("/services", { body: input }).then(unwrap),
@@ -136,7 +140,7 @@ export const api = {
   listWafCustomRules: () => client.GET("/waf-custom-rules").then(unwrap),
   createWafCustomRule: (input: WafCustomRuleInput) =>
     client.POST("/waf-custom-rules", { body: input }).then(unwrap),
-  updateWafCustomRule: (id: string, input: WafCustomRuleInput) =>
+  updateWafCustomRule: (id: string, input: WafCustomRuleUpdate) =>
     client.PATCH("/waf-custom-rules/{id}", { params: { path: { id } }, body: input }).then(unwrap),
   deleteWafCustomRule: (id: string) =>
     client.DELETE("/waf-custom-rules/{id}", { params: { path: { id } } }).then(unwrap),
@@ -144,7 +148,7 @@ export const api = {
   // blocklist
   listBlocklist: () => client.GET("/blocklist").then(unwrap),
   createBlock: (input: BlockInput) => client.POST("/blocklist", { body: input }).then(unwrap),
-  updateBlock: (id: string, input: BlockInput) =>
+  updateBlock: (id: string, input: BlockUpdate) =>
     client.PATCH("/blocklist/{id}", { params: { path: { id } }, body: input }).then(unwrap),
   deleteBlock: (id: string) => client.DELETE("/blocklist/{id}", { params: { path: { id } } }).then(unwrap),
 
@@ -156,7 +160,7 @@ export const api = {
   // rate limits
   listRateLimits: () => client.GET("/rate-limits").then(unwrap),
   createRateLimit: (input: RateLimitInput) => client.POST("/rate-limits", { body: input }).then(unwrap),
-  updateRateLimit: (id: string, input: RateLimitInput) =>
+  updateRateLimit: (id: string, input: RateLimitUpdate) =>
     client.PATCH("/rate-limits/{id}", { params: { path: { id } }, body: input }).then(unwrap),
   deleteRateLimit: (id: string) =>
     client.DELETE("/rate-limits/{id}", { params: { path: { id } } }).then(unwrap),
@@ -164,7 +168,7 @@ export const api = {
   // geo blocking
   listGeoRules: () => client.GET("/geo-rules").then(unwrap),
   createGeoRule: (input: GeoRuleInput) => client.POST("/geo-rules", { body: input }).then(unwrap),
-  updateGeoRule: (id: string, input: GeoRuleInput) =>
+  updateGeoRule: (id: string, input: GeoRuleUpdate) =>
     client.PATCH("/geo-rules/{id}", { params: { path: { id } }, body: input }).then(unwrap),
   deleteGeoRule: (id: string) => client.DELETE("/geo-rules/{id}", { params: { path: { id } } }).then(unwrap),
 

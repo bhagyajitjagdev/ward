@@ -12,15 +12,15 @@ import (
 )
 
 type settingsDTO struct {
-	WAFEngineMode       string `json:"waf_engine_mode"`       // "DetectionOnly" | "On" — the global default
-	ACMEEmail           string `json:"acme_email"`            // contact email for managed (Let's Encrypt) certs
-	AccessRetentionDays int    `json:"access_retention_days"` // days of raw access events to keep
-	WAFRetentionDays    int    `json:"waf_retention_days"`    // days of WAF detections to keep
-	CRSVersion          string `json:"crs_version"`           // read-only: OWASP CRS version the edge reported (from detections)
-	CrowdSecEnabled     *bool  `json:"crowdsec_enabled,omitempty"` // toggle the bouncer (pointer: distinguishes omitted from false on PATCH)
-	CrowdSecConfigured  bool   `json:"crowdsec_configured"`        // read-only: LAPI URL + key present (env)
-	MetricsEnabled      *bool  `json:"metrics_enabled,omitempty"`  // expose Prometheus metrics at the admin /metrics
-	LogLevel            string `json:"log_level,omitempty"`             // Caddy default logger level: DEBUG|INFO|WARN|ERROR
+	WAFEngineMode       string `json:"waf_engine_mode"`                  // "DetectionOnly" | "On" — the global default
+	ACMEEmail           string `json:"acme_email"`                       // contact email for managed (Let's Encrypt) certs
+	AccessRetentionDays int    `json:"access_retention_days"`            // days of raw access events to keep
+	WAFRetentionDays    int    `json:"waf_retention_days"`               // days of WAF detections to keep
+	CRSVersion          string `json:"crs_version"`                      // read-only: OWASP CRS version the edge reported (from detections)
+	CrowdSecEnabled     *bool  `json:"crowdsec_enabled,omitempty"`       // toggle the bouncer (pointer: distinguishes omitted from false on PATCH)
+	CrowdSecConfigured  bool   `json:"crowdsec_configured"`              // read-only: LAPI URL + key present (env)
+	MetricsEnabled      *bool  `json:"metrics_enabled,omitempty"`        // expose Prometheus metrics at the admin /metrics
+	LogLevel            string `json:"log_level,omitempty"`              // Caddy default logger level: DEBUG|INFO|WARN|ERROR
 	AccessLogErrorsOnly *bool  `json:"access_log_errors_only,omitempty"` // only log 5xx access entries
 	TLSMinVersion       string `json:"tls_min_version,omitempty"`        // edge-wide TLS floor: "1.2" | "1.3"
 	// EdgeVersions is read-only: the components compiled into the ward-caddy image this

@@ -277,7 +277,10 @@ export interface paths {
         delete: operations["deleteService"];
         options?: never;
         head?: never;
-        /** Update a service (full object; reconciles the edge) */
+        /**
+         * Update a service (partial; reconciles the edge)
+         * @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+         */
         patch: operations["updateService"];
         trace?: never;
     };
@@ -416,7 +419,10 @@ export interface paths {
         delete: operations["deleteWafCustomRule"];
         options?: never;
         head?: never;
-        /** Update a rule (validated against the edge; reverted on rejection) */
+        /**
+         * Update a rule (partial; validated against the edge, reverted on rejection)
+         * @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+         */
         patch: operations["updateWafCustomRule"];
         trace?: never;
     };
@@ -452,7 +458,10 @@ export interface paths {
         delete: operations["deleteBlock"];
         options?: never;
         head?: never;
-        /** Update a rule (reconciles the edge) */
+        /**
+         * Update an IP rule (partial; reconciles the edge)
+         * @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+         */
         patch: operations["updateBlock"];
         trace?: never;
     };
@@ -523,7 +532,10 @@ export interface paths {
         delete: operations["deleteRateLimit"];
         options?: never;
         head?: never;
-        /** Update a rate limit (reconciles the edge) */
+        /**
+         * Update a rate limit (partial; reconciles the edge)
+         * @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+         */
         patch: operations["updateRateLimit"];
         trace?: never;
     };
@@ -559,7 +571,10 @@ export interface paths {
         delete: operations["deleteGeoRule"];
         options?: never;
         head?: never;
-        /** Update a geo rule (reconciles the edge) */
+        /**
+         * Update a geo rule (partial; reconciles the edge)
+         * @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+         */
         patch: operations["updateGeoRule"];
         trace?: never;
     };
@@ -919,8 +934,27 @@ export interface components {
             path_rules?: components["schemas"]["PathRule"][];
             raw_caddy?: string;
         };
-        ServiceUpdate: components["schemas"]["ServiceInput"] & {
-            enabled: boolean;
+        /** @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value. The single-hostname `public_hostname` on its own replaces the list. `http.basic_auth_password` is write-only: present rehashes, absent keeps the stored hash. */
+        ServiceUpdate: {
+            name?: string;
+            /** @description Optional single-hostname shorthand; public_hostnames wins if both are sent. */
+            public_hostname?: string;
+            /** @description One or more hostnames; the first is the primary. */
+            public_hostnames?: string[];
+            upstreams?: string[];
+            lb_policy?: string;
+            tls_mode?: string;
+            waf_enabled?: boolean;
+            waf_mode?: components["schemas"]["ServiceWafMode"];
+            /** @description Request paths (prefix + subpaths) that bypass the WAF so streaming (SSE) works; WebSocket upgrades bypass automatically. */
+            waf_skip_paths?: string[];
+            http?: components["schemas"]["HTTPConfig"];
+            health_check?: components["schemas"]["HealthCheck"];
+            redirect?: components["schemas"]["Redirect"];
+            /** @description Route paths of this host to different backends (or deny them). `upstreams` is the default when no rule matches. */
+            path_rules?: components["schemas"]["PathRule"][];
+            raw_caddy?: string;
+            enabled?: boolean;
         };
         Settings: {
             waf_engine_mode: components["schemas"]["WafMode"];
@@ -1097,6 +1131,15 @@ export interface components {
             seclang: string;
             enabled?: boolean;
         };
+        /** @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value. */
+        WafCustomRuleUpdate: {
+            scope?: components["schemas"]["Scope"];
+            service_id?: string | null;
+            name?: string;
+            /** @description Raw SecLang (multi-line). Injected before the CRS include, after Ward's generated exclusions. */
+            seclang?: string;
+            enabled?: boolean;
+        };
         Block: {
             id: string;
             scope: components["schemas"]["Scope"];
@@ -1112,6 +1155,16 @@ export interface components {
         };
         BlockInput: {
             cidr: string;
+            scope?: components["schemas"]["Scope"];
+            mode?: components["schemas"]["BlockMode"];
+            service_id?: string | null;
+            reason?: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+        };
+        /** @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value. */
+        BlockUpdate: {
+            cidr?: string;
             scope?: components["schemas"]["Scope"];
             mode?: components["schemas"]["BlockMode"];
             service_id?: string | null;
@@ -1147,6 +1200,13 @@ export interface components {
             max_events: number;
             window: string;
         };
+        /** @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value. */
+        RateLimitUpdate: {
+            scope?: components["schemas"]["Scope"];
+            service_id?: string | null;
+            max_events?: number;
+            window?: string;
+        };
         GeoRule: {
             id: string;
             scope: components["schemas"]["Scope"];
@@ -1161,6 +1221,13 @@ export interface components {
             mode?: components["schemas"]["BlockMode"];
             service_id?: string | null;
             countries: string[];
+        };
+        /** @description JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value. */
+        GeoRuleUpdate: {
+            scope?: components["schemas"]["Scope"];
+            mode?: components["schemas"]["BlockMode"];
+            service_id?: string | null;
+            countries?: string[];
         };
         GeoIPStatus: {
             present: boolean;
@@ -2008,7 +2075,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WafCustomRuleInput"];
+                "application/json": components["schemas"]["WafCustomRuleUpdate"];
             };
         };
         responses: {
@@ -2102,7 +2169,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BlockInput"];
+                "application/json": components["schemas"]["BlockUpdate"];
             };
         };
         responses: {
@@ -2263,7 +2330,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RateLimitInput"];
+                "application/json": components["schemas"]["RateLimitUpdate"];
             };
         };
         responses: {
@@ -2357,7 +2424,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GeoRuleInput"];
+                "application/json": components["schemas"]["GeoRuleUpdate"];
             };
         };
         responses: {

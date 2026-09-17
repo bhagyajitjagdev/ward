@@ -73,6 +73,7 @@ func main() {
 	check("snapshots", checkSnapshots)
 	check("rollback", checkRollback)
 	check("tls-guards", checkTLSGuards)
+	check("patch-partial", checkPatchPartial)
 	check("snapshot-export", checkSnapshotAndExport)
 	check("metrics", checkMetrics)
 	check("log-errors-only", checkLogErrorsOnly)
@@ -1008,6 +1009,70 @@ func checkTLSGuards() error {
 			api("DELETE", "/services/"+fmt.Sprint(svc["id"]), nil)
 		}
 		return fmt.Errorf("wildcard + managed TLS should be rejected (400), got %d %s", st, trim(string(b)))
+	}
+	return nil
+}
+
+// checkPatchPartial proves PATCH is a merge patch on the live edge: a body with one
+// field changes that field only — the WAF stays on + enforcing and the service keeps
+// serving — null clears a field, and an IP rule keeps its mode/scope when only the
+// reason changes. (Before, each of those omissions silently reset the rest.)
+func checkPatchPartial() error {
+	id, done, err := mkService(svcSpec("patch.test", true, "On"))
+	if err != nil {
+		return err
+	}
+	defer done()
+	st, b := api("PATCH", "/services/"+id, map[string]any{"name": "patched"})
+	if st != 200 {
+		return fmt.Errorf("PATCH name → %d %s", st, trim(string(b)))
+	}
+	var svc struct {
+		Name       string   `json:"name"`
+		WAFEnabled bool     `json:"waf_enabled"`
+		WAFMode    string   `json:"waf_mode"`
+		Enabled    bool     `json:"enabled"`
+		Hosts      []string `json:"public_hostnames"`
+	}
+	_ = json.Unmarshal(b, &svc)
+	if svc.Name != "patched" || !svc.WAFEnabled || svc.WAFMode != "On" || !svc.Enabled || len(svc.Hosts) != 1 || svc.Hosts[0] != "patch.test" {
+		return fmt.Errorf("a name-only PATCH changed more than the name: %s", trim(string(b)))
+	}
+	if err := retry(10, 300*time.Millisecond, func() error {
+		if st, _ := edge("GET", "patch.test", "/query?q="+sqli, nil, ""); st != 403 {
+			return fmt.Errorf("WAF should still enforce after the PATCH, got %d", st)
+		}
+		st, body := edge("GET", "patch.test", "/", nil, "")
+		if st != 200 || !strings.Contains(body, "wardtest-upstream") {
+			return fmt.Errorf("service should still serve after the PATCH: %d %q", st, trim(body))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	// null clears one field (the mode override → inherit), the rest stays.
+	st, b = api("PATCH", "/services/"+id, map[string]any{"waf_mode": nil})
+	_ = json.Unmarshal(b, &svc)
+	if st != 200 || svc.WAFMode != "" || !svc.WAFEnabled {
+		return fmt.Errorf("null should clear only waf_mode: %d %s", st, trim(string(b)))
+	}
+	// An allow-only, per-service IP rule keeps mode + scope when only the reason changes.
+	st, b = api("POST", "/blocklist", map[string]any{"cidr": "198.51.100.7", "mode": "allow", "scope": "service", "service_id": id})
+	if st != 201 {
+		return fmt.Errorf("create block → %d %s", st, trim(string(b)))
+	}
+	var blk struct {
+		ID        string  `json:"id"`
+		Mode      string  `json:"mode"`
+		Scope     string  `json:"scope"`
+		ServiceID *string `json:"service_id"`
+	}
+	_ = json.Unmarshal(b, &blk)
+	defer api("DELETE", "/blocklist/"+blk.ID, nil)
+	st, b = api("PATCH", "/blocklist/"+blk.ID, map[string]any{"reason": "noted"})
+	_ = json.Unmarshal(b, &blk)
+	if st != 200 || blk.Mode != "allow" || blk.Scope != "service" || blk.ServiceID == nil || *blk.ServiceID != id {
+		return fmt.Errorf("reason-only PATCH changed mode/scope: %d %s", st, trim(string(b)))
 	}
 	return nil
 }

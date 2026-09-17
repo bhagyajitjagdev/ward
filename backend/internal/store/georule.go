@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -77,6 +79,19 @@ func (s *Store) UpdateGeoRule(ctx context.Context, id string, in model.GeoRule) 
 		return model.GeoRule{}, false, err
 	}
 	return out.toModel(), true, nil
+}
+
+// GetGeoRule returns one geo rule; found=false when the id doesn't exist.
+func (s *Store) GetGeoRule(ctx context.Context, id string) (model.GeoRule, bool, error) {
+	var row geoRuleRow
+	err := s.DB.NewSelect().Model(&row).Where("id = ?", id).Limit(1).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.GeoRule{}, false, nil
+	}
+	if err != nil {
+		return model.GeoRule{}, false, err
+	}
+	return row.toModel(), true, nil
 }
 
 // ListGeoRules returns all geo rules, newest first.

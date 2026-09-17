@@ -28,6 +28,12 @@ All notable changes to Ward are documented here. The format follows
 
 ### Changed
 
+- **PATCH is a partial update (JSON Merge Patch, RFC 7396)** on services, IP rules, rate limits,
+  geo rules and custom WAF rules: only the fields in the body change, `null` clears a field,
+  nested objects merge per field, arrays replace as a whole. Previously an omitted field was
+  reset to its default with a 200 — an omitted `waf_enabled` turned the WAF off, an omitted `mode`
+  flipped an allow-only IP or geo rule to block, an omitted `scope` made a per-service rule
+  edge-wide. The spec's update bodies (`*Update` schemas) are now all-optional to match.
 - **Rollback is durable.** A snapshot now records Ward's declarative state next to the rendered
   Caddy config; rolling back restores that state to the database and re-applies it, so the drift
   reconciler keeps it (previously a rollback only reloaded the edge and was overwritten within a

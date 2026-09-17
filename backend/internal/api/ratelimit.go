@@ -17,19 +17,13 @@ func (h *Handler) listRateLimits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rls)
 }
 
-func (h *Handler) createRateLimit(w http.ResponseWriter, r *http.Request) {
-	var in model.RateLimit
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-		return
-	}
+// validateRateLimit checks a fully-populated rate limit (shared by create and update).
+func validateRateLimit(in *model.RateLimit) (int, string) {
 	if in.MaxEvents <= 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "max_events must be greater than 0"})
-		return
+		return http.StatusBadRequest, "max_events must be greater than 0"
 	}
 	if _, err := time.ParseDuration(in.Window); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "window must be a duration like 1m, 10s, or 1h"})
-		return
+		return http.StatusBadRequest, "window must be a duration like 1m, 10s, or 1h"
 	}
 	if in.Scope == "" {
 		in.Scope = "global"
@@ -39,11 +33,22 @@ func (h *Handler) createRateLimit(w http.ResponseWriter, r *http.Request) {
 		in.ServiceID = nil
 	case "service":
 		if in.ServiceID == nil || *in.ServiceID == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "service_id is required for scope=service"})
-			return
+			return http.StatusBadRequest, "service_id is required for scope=service"
 		}
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "scope must be 'global' or 'service'"})
+		return http.StatusBadRequest, "scope must be 'global' or 'service'"
+	}
+	return 0, ""
+}
+
+func (h *Handler) createRateLimit(w http.ResponseWriter, r *http.Request) {
+	var in model.RateLimit
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if code, msg := validateRateLimit(&in); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
 
@@ -57,36 +62,33 @@ func (h *Handler) createRateLimit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, rl)
 }
 
+// updateRateLimit is a JSON Merge Patch: only the fields in the body change.
 func (h *Handler) updateRateLimit(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	existing, found, err := h.store.GetRateLimit(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	p, err := readPatch(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	var in model.RateLimit
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	if err := p.Apply(existing, &in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if in.MaxEvents <= 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "max_events must be greater than 0"})
+	if code, msg := validateRateLimit(&in); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
-	if _, err := time.ParseDuration(in.Window); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "window must be a duration like 1m, 10s, or 1h"})
-		return
-	}
-	if in.Scope == "" {
-		in.Scope = "global"
-	}
-	switch in.Scope {
-	case "global":
-		in.ServiceID = nil
-	case "service":
-		if in.ServiceID == nil || *in.ServiceID == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "service_id is required for scope=service"})
-			return
-		}
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "scope must be 'global' or 'service'"})
-		return
-	}
-	rl, found, err := h.store.UpdateRateLimit(r.Context(), r.PathValue("id"), in)
+	rl, found, err := h.store.UpdateRateLimit(r.Context(), id, in)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return

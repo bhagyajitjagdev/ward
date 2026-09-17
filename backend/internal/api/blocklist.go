@@ -18,16 +18,12 @@ func (h *Handler) listBlocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, blocks)
 }
 
-func (h *Handler) createBlock(w http.ResponseWriter, r *http.Request) {
-	var in model.BlockedIP
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-		return
-	}
+// validateBlock normalizes + checks a fully-populated IP rule (shared by create and
+// update). An empty scope/mode (a null in a patch) means the default: global / block.
+func validateBlock(in *model.BlockedIP) (int, string) {
 	in.CIDR = strings.TrimSpace(in.CIDR)
 	if !validIPOrCIDR(in.CIDR) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr must be a valid IP or CIDR"})
-		return
+		return http.StatusBadRequest, "cidr must be a valid IP or CIDR"
 	}
 	if in.Scope == "" {
 		in.Scope = "global"
@@ -37,18 +33,28 @@ func (h *Handler) createBlock(w http.ResponseWriter, r *http.Request) {
 		in.ServiceID = nil
 	case "service":
 		if in.ServiceID == nil || *in.ServiceID == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "service_id is required for scope=service"})
-			return
+			return http.StatusBadRequest, "service_id is required for scope=service"
 		}
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "scope must be 'global' or 'service'"})
-		return
+		return http.StatusBadRequest, "scope must be 'global' or 'service'"
 	}
 	if in.Mode == "" {
 		in.Mode = "block"
 	}
 	if in.Mode != "block" && in.Mode != "allow" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be 'block' or 'allow'"})
+		return http.StatusBadRequest, "mode must be 'block' or 'allow'"
+	}
+	return 0, ""
+}
+
+func (h *Handler) createBlock(w http.ResponseWriter, r *http.Request) {
+	var in model.BlockedIP
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if code, msg := validateBlock(&in); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
 	in.Source = "manual"
@@ -67,40 +73,34 @@ func (h *Handler) createBlock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, b)
 }
 
+// updateBlock is a JSON Merge Patch: only the fields in the body change, null clears
+// (e.g. `"expires_at": null` makes a temporary ban permanent), the rest is kept.
 func (h *Handler) updateBlock(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	existing, found, err := h.store.GetBlock(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	p, err := readPatch(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	var in model.BlockedIP
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	if err := p.Apply(existing, &in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	in.CIDR = strings.TrimSpace(in.CIDR)
-	if !validIPOrCIDR(in.CIDR) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr must be a valid IP or CIDR"})
+	if code, msg := validateBlock(&in); code != 0 {
+		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
-	if in.Scope == "" {
-		in.Scope = "global"
-	}
-	switch in.Scope {
-	case "global":
-		in.ServiceID = nil
-	case "service":
-		if in.ServiceID == nil || *in.ServiceID == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "service_id is required for scope=service"})
-			return
-		}
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "scope must be 'global' or 'service'"})
-		return
-	}
-	if in.Mode == "" {
-		in.Mode = "block"
-	}
-	if in.Mode != "block" && in.Mode != "allow" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be 'block' or 'allow'"})
-		return
-	}
-	b, found, err := h.store.UpdateBlock(r.Context(), r.PathValue("id"), in)
+	b, found, err := h.store.UpdateBlock(r.Context(), id, in)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return

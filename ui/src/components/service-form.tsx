@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react"
 import { Plus, X } from "lucide-react"
-import type { HTTPConfig, Service, ServiceUpdate, WafMode } from "@/lib/api"
+import type { HTTPConfig, Service, ServiceInput, WafMode } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -112,7 +112,11 @@ export function serviceToForm(s: Service): ServiceFormState {
   }
 }
 
-export function formToInput(f: ServiceFormState): ServiceUpdate {
+// The form always submits the whole service, so its payload satisfies the create body
+// (ServiceInput) and, being complete, the merge-patch update body too.
+export type ServiceFormPayload = ServiceInput & { enabled: boolean }
+
+export function formToInput(f: ServiceFormState): ServiceFormPayload {
   return {
     name: f.name.trim(),
     public_hostnames: f.hostnames,

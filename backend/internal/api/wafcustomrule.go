@@ -13,10 +13,10 @@ import (
 // operator is trusted; this just keeps a paste accident out of the config).
 const maxSecLangLen = 64 * 1024
 
-// customRuleInput is the request shape. Enabled is a pointer so "omitted" is
-// distinguishable from an explicit false: an omitted enabled means true on
-// create (a new rule should be live — and only a rendered rule gets validated
-// by the edge) and keep-current on update.
+// customRuleInput is the create request shape. Enabled is a pointer so "omitted"
+// is distinguishable from an explicit false: an omitted enabled means true on
+// create (a new rule should be live — and only a rendered rule gets validated by
+// the edge). Update is a merge patch onto the existing rule (see updateWAFCustomRule).
 type customRuleInput struct {
 	Scope     string  `json:"scope"`
 	ServiceID *string `json:"service_id"`
@@ -144,14 +144,11 @@ func (h *Handler) createWAFCustomRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, rule)
 }
 
+// updateWAFCustomRule is a JSON Merge Patch: only the fields in the body change (an
+// omitted enabled/scope keeps the current value). Validate-before-keep as on create:
+// on an edge rejection the previous row is restored.
 func (h *Handler) updateWAFCustomRule(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var body customRuleInput
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-		return
-	}
-
 	prev, found, err := h.store.GetWAFCustomRule(r.Context(), id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
@@ -161,7 +158,16 @@ func (h *Handler) updateWAFCustomRule(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
-	in := body.toModel(prev.Enabled) // omitted enabled → keep current
+	p, err := readPatch(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	var in model.WAFCustomRule
+	if err := p.Apply(prev, &in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
 	if msg := validateCustomRuleInput(&in); msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return
@@ -175,7 +181,6 @@ func (h *Handler) updateWAFCustomRule(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
-	// Same validate-before-keep as create: on rejection restore the previous row.
 	if msg := h.applyOrReject(r.Context()); msg != "" {
 		_, _, _ = h.store.UpdateWAFCustomRule(r.Context(), id, prev)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the edge rejected this rule: " + msg})

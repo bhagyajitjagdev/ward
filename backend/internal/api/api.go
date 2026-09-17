@@ -426,55 +426,57 @@ func validatePathRules(rules []model.PathRule) (int, string) {
 	return 0, ""
 }
 
+// validateService runs the checks + normalizations shared by create and update on a
+// fully-populated service (for an update: the existing row with the patch merged
+// in). excludeID is the service being updated, for hostname uniqueness.
+func (h *Handler) validateService(ctx context.Context, in *model.Service, excludeID string) (int, string) {
+	if in.Name == "" {
+		return http.StatusBadRequest, "name is required"
+	}
+	if len(in.Upstreams) == 0 && strings.TrimSpace(in.Redirect.To) == "" {
+		return http.StatusBadRequest, "a service needs at least one upstream, or a redirect target"
+	}
+	if !validWAFMode(in.WAFMode) {
+		return http.StatusBadRequest, "waf_mode must be empty, 'DetectionOnly' or 'On'"
+	}
+	if !validTLSMode(in.TLSMode) {
+		return http.StatusBadRequest, "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"
+	}
+	normalizeSkipPaths(in)
+	normalizePathRules(in)
+	if code, msg := validateHealthCheck(in.HealthCheck); code != 0 {
+		return code, msg
+	}
+	if code, msg := validateRedirect(in.Redirect); code != 0 {
+		return code, msg
+	}
+	if code, msg := validatePathRules(in.PathRules); code != 0 {
+		return code, msg
+	}
+	if code, msg := h.checkServiceHostnames(ctx, in, excludeID); code != 0 {
+		return code, msg
+	}
+	if in.RawCaddy != "" {
+		if _, err := caddy.AdaptFragment(in.RawCaddy); err != nil {
+			return http.StatusBadRequest, "advanced Caddyfile: " + err.Error()
+		}
+	}
+	return 0, ""
+}
+
 func (h *Handler) createService(w http.ResponseWriter, r *http.Request) {
 	var in model.Service
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if in.Name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
-		return
-	}
-	if len(in.Upstreams) == 0 && strings.TrimSpace(in.Redirect.To) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a service needs at least one upstream, or a redirect target"})
-		return
-	}
-	if !validWAFMode(in.WAFMode) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "waf_mode must be empty, 'DetectionOnly' or 'On'"})
-		return
-	}
-	if !validTLSMode(in.TLSMode) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
-		return
-	}
-	normalizeSkipPaths(&in)
-	normalizePathRules(&in)
-	if code, msg := validateHealthCheck(in.HealthCheck); code != 0 {
-		writeJSON(w, code, map[string]string{"error": msg})
-		return
-	}
-	if code, msg := validateRedirect(in.Redirect); code != 0 {
-		writeJSON(w, code, map[string]string{"error": msg})
-		return
-	}
-	if code, msg := validatePathRules(in.PathRules); code != 0 {
-		writeJSON(w, code, map[string]string{"error": msg})
-		return
-	}
-	if code, msg := h.checkServiceHostnames(r.Context(), &in, ""); code != 0 {
+	if code, msg := h.validateService(r.Context(), &in, ""); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
 	if code, msg := prepareServiceHTTP(&in, ""); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
-	}
-	if in.RawCaddy != "" {
-		if _, err := caddy.AdaptFragment(in.RawCaddy); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "advanced Caddyfile: " + err.Error()})
-			return
-		}
 	}
 
 	svc, err := h.store.CreateService(r.Context(), in)
@@ -508,65 +510,46 @@ func (h *Handler) getService(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sanitizeService(svc))
 }
 
+// updateService is a JSON Merge Patch (RFC 7396): only the fields in the body
+// change — nested objects (http, health_check, redirect) merge per field, arrays
+// replace as a whole, null clears a field to its default, and anything absent keeps
+// its current value. `{"name": "x"}` renames and nothing else moves.
 func (h *Handler) updateService(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	existing, err := h.store.GetService(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	p, err := readPatch(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	var in model.Service
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	if err := p.Apply(existing, &in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if in.Name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
-		return
+	// The single-hostname alias on its own replaces the list (the list wins if both are sent).
+	if p.Has("public_hostname") && !p.Has("public_hostnames") {
+		in.PublicHostnames = []string{in.PublicHostname}
 	}
-	if len(in.Upstreams) == 0 && strings.TrimSpace(in.Redirect.To) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a service needs at least one upstream, or a redirect target"})
-		return
-	}
-	if !validWAFMode(in.WAFMode) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "waf_mode must be empty, 'DetectionOnly' or 'On'"})
-		return
-	}
-	if !validTLSMode(in.TLSMode) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be empty, 'internal', 'managed', 'none' or 'custom'"})
-		return
-	}
-	normalizeSkipPaths(&in)
-	normalizePathRules(&in)
-	if code, msg := validateHealthCheck(in.HealthCheck); code != 0 {
+	if code, msg := h.validateService(r.Context(), &in, id); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
 	}
-	if code, msg := validateRedirect(in.Redirect); code != 0 {
+	// basic_auth_password is write-only: present → rehash, absent → keep the stored hash.
+	if code, msg := prepareServiceHTTP(&in, existing.HTTP.BasicAuthHash); code != 0 {
 		writeJSON(w, code, map[string]string{"error": msg})
 		return
-	}
-	if code, msg := validatePathRules(in.PathRules); code != 0 {
-		writeJSON(w, code, map[string]string{"error": msg})
-		return
-	}
-	if code, msg := h.checkServiceHostnames(r.Context(), &in, r.PathValue("id")); code != 0 {
-		writeJSON(w, code, map[string]string{"error": msg})
-		return
-	}
-	// Fetch the current service for the existing basic-auth hash (kept when no new
-	// password is supplied). ErrNotFound surfaces below via UpdateService.
-	existing, existErr := h.store.GetService(r.Context(), r.PathValue("id"))
-	existingHash := ""
-	if existErr == nil {
-		existingHash = existing.HTTP.BasicAuthHash
-	}
-	if code, msg := prepareServiceHTTP(&in, existingHash); code != 0 {
-		writeJSON(w, code, map[string]string{"error": msg})
-		return
-	}
-	if in.RawCaddy != "" {
-		if _, err := caddy.AdaptFragment(in.RawCaddy); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "advanced Caddyfile: " + err.Error()})
-			return
-		}
 	}
 
-	svc, err := h.store.UpdateService(r.Context(), r.PathValue("id"), in)
+	svc, err := h.store.UpdateService(r.Context(), id, in)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return

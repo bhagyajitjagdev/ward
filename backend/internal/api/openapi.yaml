@@ -262,7 +262,9 @@ paths:
         default: { $ref: "#/components/responses/Error" }
     patch:
       operationId: updateService
-      summary: Update a service (full object; reconciles the edge)
+      summary: Update a service (partial; reconciles the edge)
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
       parameters: [{ $ref: "#/components/parameters/id" }]
       requestBody:
         required: true
@@ -430,13 +432,15 @@ paths:
   /waf-custom-rules/{id}:
     patch:
       operationId: updateWafCustomRule
-      summary: Update a rule (validated against the edge; reverted on rejection)
+      summary: Update a rule (partial; validated against the edge, reverted on rejection)
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
       parameters: [{ $ref: "#/components/parameters/id" }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/WafCustomRuleInput" }
+            schema: { $ref: "#/components/schemas/WafCustomRuleUpdate" }
       responses:
         "200":
           description: Updated
@@ -484,13 +488,15 @@ paths:
   /blocklist/{id}:
     patch:
       operationId: updateBlock
-      summary: Update a rule (reconciles the edge)
+      summary: Update an IP rule (partial; reconciles the edge)
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
       parameters: [{ $ref: "#/components/parameters/id" }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/BlockInput" }
+            schema: { $ref: "#/components/schemas/BlockUpdate" }
       responses:
         "200":
           description: Updated
@@ -576,13 +582,15 @@ paths:
   /rate-limits/{id}:
     patch:
       operationId: updateRateLimit
-      summary: Update a rate limit (reconciles the edge)
+      summary: Update a rate limit (partial; reconciles the edge)
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
       parameters: [{ $ref: "#/components/parameters/id" }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/RateLimitInput" }
+            schema: { $ref: "#/components/schemas/RateLimitUpdate" }
       responses:
         "200":
           description: Updated
@@ -630,13 +638,15 @@ paths:
   /geo-rules/{id}:
     patch:
       operationId: updateGeoRule
-      summary: Update a geo rule (reconciles the edge)
+      summary: Update a geo rule (partial; reconciles the edge)
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
       parameters: [{ $ref: "#/components/parameters/id" }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/GeoRuleInput" }
+            schema: { $ref: "#/components/schemas/GeoRuleUpdate" }
       responses:
         "200":
           description: Updated
@@ -1082,12 +1092,36 @@ components:
         raw_caddy: { type: string }
 
     ServiceUpdate:
-      allOf:
-        - $ref: "#/components/schemas/ServiceInput"
-        - type: object
-          required: [enabled]
-          properties:
-            enabled: { type: boolean }
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value. The single-hostname `public_hostname` on its own replaces the list. `http.basic_auth_password` is write-only: present rehashes, absent keeps the stored hash.
+      type: object
+      properties:
+        name: { type: string }
+        public_hostname: { type: string, description: "Optional single-hostname shorthand; public_hostnames wins if both are sent." }
+        public_hostnames:
+          type: array
+          items: { type: string }
+          description: One or more hostnames; the first is the primary.
+        upstreams:
+          type: array
+          items: { type: string }
+        lb_policy: { type: string }
+        tls_mode: { type: string }
+        waf_enabled: { type: boolean }
+        waf_mode: { $ref: "#/components/schemas/ServiceWafMode" }
+        waf_skip_paths:
+          type: array
+          items: { type: string }
+          description: Request paths (prefix + subpaths) that bypass the WAF so streaming (SSE) works; WebSocket upgrades bypass automatically.
+        http: { $ref: "#/components/schemas/HTTPConfig" }
+        health_check: { $ref: "#/components/schemas/HealthCheck" }
+        redirect: { $ref: "#/components/schemas/Redirect" }
+        path_rules:
+          type: array
+          items: { $ref: "#/components/schemas/PathRule" }
+          description: Route paths of this host to different backends (or deny them). `upstreams` is the default when no rule matches.
+        raw_caddy: { type: string }
+        enabled: { type: boolean }
 
     Settings:
       type: object
@@ -1294,6 +1328,19 @@ components:
           description: Raw SecLang (multi-line). Injected before the CRS include, after Ward's generated exclusions.
         enabled: { type: boolean }
 
+    WafCustomRuleUpdate:
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+      type: object
+      properties:
+        scope: { $ref: "#/components/schemas/Scope" }
+        service_id: { type: string, nullable: true }
+        name: { type: string }
+        seclang:
+          type: string
+          description: Raw SecLang (multi-line). Injected before the CRS include, after Ward's generated exclusions.
+        enabled: { type: boolean }
+
     Block:
       type: object
       required: [id, scope, mode, cidr, source, created_at]
@@ -1311,6 +1358,18 @@ components:
     BlockInput:
       type: object
       required: [cidr]
+      properties:
+        cidr: { type: string }
+        scope: { $ref: "#/components/schemas/Scope" }
+        mode: { $ref: "#/components/schemas/BlockMode" }
+        service_id: { type: string, nullable: true }
+        reason: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+
+    BlockUpdate:
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+      type: object
       properties:
         cidr: { type: string }
         scope: { $ref: "#/components/schemas/Scope" }
@@ -1356,6 +1415,16 @@ components:
         max_events: { type: integer }
         window: { type: string }
 
+    RateLimitUpdate:
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+      type: object
+      properties:
+        scope: { $ref: "#/components/schemas/Scope" }
+        service_id: { type: string, nullable: true }
+        max_events: { type: integer }
+        window: { type: string }
+
     GeoRule:
       type: object
       required: [id, scope, mode, countries, created_at]
@@ -1372,6 +1441,18 @@ components:
     GeoRuleInput:
       type: object
       required: [scope, countries]
+      properties:
+        scope: { $ref: "#/components/schemas/Scope" }
+        mode: { $ref: "#/components/schemas/BlockMode" }
+        service_id: { type: string, nullable: true }
+        countries:
+          type: array
+          items: { type: string }
+
+    GeoRuleUpdate:
+      description: >-
+        JSON Merge Patch (RFC 7396): only the fields present in the body change. `null` clears a field to its default, nested objects merge field by field, arrays replace as a whole, and anything absent keeps its current value.
+      type: object
       properties:
         scope: { $ref: "#/components/schemas/Scope" }
         mode: { $ref: "#/components/schemas/BlockMode" }
