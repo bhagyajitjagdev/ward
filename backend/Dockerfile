@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 go build -tags embed_ui -ldflags="-s -w -X main.version=${VERS
 #     by internal/edge/versions_test.go). Ward uses it to `caddy adapt` a service's
 #     advanced Caddyfile fragment, so plugin directives (rate_limit, coraza_waf, …) work
 #     in fragments, matching the edge — not just core directives.
-FROM caddy:2.11.4-builder AS caddybuild
+FROM caddy:2.11.6-builder AS caddybuild
 # The Go module + build caches are dropped from this layer at the end: they are ~2 GB
 # around a 55 MB binary, and this layer is what CI's BuildKit cache stores and restores.
 # Kept small, it survives the repository's 10 GB Actions-cache limit instead of being
