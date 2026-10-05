@@ -7,7 +7,7 @@
 # (https://github.com/caddyserver/caddy/releases). NOTE: the CrowdSec *agent* and
 # Postgres are separate, user-chosen pulled containers — not part of this image.
 
-FROM caddy:2.11.4-builder AS builder
+FROM caddy:2.11.6-builder AS builder
 
 # Pin every module explicitly (coraza/v3 + the CRS are pinned too, not left transitive)
 # so the compiled versions are exactly what the labels below claim.
@@ -25,7 +25,7 @@ RUN xcaddy build \
     --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.14.1 \
     && rm -rf /go/pkg/mod /root/.cache/go-build
 
-FROM caddy:2.11.4
+FROM caddy:2.11.6
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 
