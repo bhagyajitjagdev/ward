@@ -31,13 +31,13 @@ FROM caddy:2.11.4-builder AS caddybuild
 # Kept small, it survives the repository's 10 GB Actions-cache limit instead of being
 # evicted between runs (which forces the slow, flake-prone xcaddy rebuild).
 RUN xcaddy build \
-    --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
-    --with github.com/corazawaf/coraza/v3@v3.7.0 \
+    --with github.com/corazawaf/coraza-caddy/v2@v2.6.2 \
+    --with github.com/corazawaf/coraza/v3@v3.8.1 \
     --with github.com/corazawaf/coraza-coreruleset/v4@v4.25.0 \
     --with github.com/mholt/caddy-ratelimit@v0.1.0 \
     --with github.com/porech/caddy-maxmind-geolocation@v1.0.3 \
-    --with github.com/hslatman/caddy-crowdsec-bouncer/http@v0.14.1 \
-    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.14.1 \
+    --with github.com/hslatman/caddy-crowdsec-bouncer/http@v0.15.0 \
+    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.15.0 \
     && rm -rf /go/pkg/mod /root/.cache/go-build
 
 # 3. Runtime. Runs as root so it can write the shared volumes (db/geoip/certs);
