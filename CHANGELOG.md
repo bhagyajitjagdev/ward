@@ -66,6 +66,10 @@ All notable changes to Ward are documented here. The format follows
   protocol names): configs Ward renders are unaffected, but a raw-Caddyfile fragment relying on
   the old leniency is now rejected at validate, before apply. Requests with an invalid host get
   `400` before any route runs.
+- **Data layer: bun 1.3.0** (plus goose 3.29, `x/crypto` 0.58) — upstream SQL-formatting
+  hardening. bun now refuses text containing a NUL byte, so Ward stores request-derived event and
+  audit text with any NUL shown as a literal `\x00`; otherwise a request carrying `%00` could have
+  dropped itself from the WAF event log.
 
 _Ward is pre-1.0; expect breaking changes until the first tagged release._
 
