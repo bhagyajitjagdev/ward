@@ -7,7 +7,7 @@
 # (https://github.com/caddyserver/caddy/releases). NOTE: the CrowdSec *agent* and
 # Postgres are separate, user-chosen pulled containers — not part of this image.
 
-FROM caddy:2.11.7-builder AS builder
+FROM caddy:2.11.9-builder AS builder
 
 # Pin every module explicitly (coraza/v3 + the CRS are pinned too, not left transitive)
 # so the compiled versions are exactly what the labels below claim.
@@ -25,7 +25,7 @@ RUN xcaddy build \
     --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.15.0 \
     && rm -rf /go/pkg/mod /root/.cache/go-build
 
-FROM caddy:2.11.7
+FROM caddy:2.11.9
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 
@@ -39,7 +39,7 @@ LABEL org.opencontainers.image.title="ward-caddy" \
       org.opencontainers.image.source="https://github.com/bhagyajitjagdev/ward" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${WARD_VERSION}" \
-      io.ward.caddy="v2.11.7" \
+      io.ward.caddy="v2.11.9" \
       io.ward.coraza="v3.8.1" \
       io.ward.coraza_caddy="v2.6.2" \
       io.ward.crs="v4.25.0" \
