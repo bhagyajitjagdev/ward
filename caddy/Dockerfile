@@ -7,7 +7,7 @@
 # (https://github.com/caddyserver/caddy/releases). NOTE: the CrowdSec *agent* and
 # Postgres are separate, user-chosen pulled containers — not part of this image.
 
-FROM caddy:2.11.4-builder AS builder
+FROM caddy:2.11.7-builder AS builder
 
 # Pin every module explicitly (coraza/v3 + the CRS are pinned too, not left transitive)
 # so the compiled versions are exactly what the labels below claim.
@@ -16,16 +16,16 @@ FROM caddy:2.11.4-builder AS builder
 # Kept small, it survives the repository's 10 GB Actions-cache limit instead of being
 # evicted between runs (which forces the slow, flake-prone xcaddy rebuild).
 RUN xcaddy build \
-    --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
-    --with github.com/corazawaf/coraza/v3@v3.7.0 \
+    --with github.com/corazawaf/coraza-caddy/v2@v2.6.2 \
+    --with github.com/corazawaf/coraza/v3@v3.8.1 \
     --with github.com/corazawaf/coraza-coreruleset/v4@v4.25.0 \
     --with github.com/mholt/caddy-ratelimit@v0.1.0 \
     --with github.com/porech/caddy-maxmind-geolocation@v1.0.3 \
-    --with github.com/hslatman/caddy-crowdsec-bouncer/http@v0.14.1 \
-    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.14.1 \
+    --with github.com/hslatman/caddy-crowdsec-bouncer/http@v0.15.0 \
+    --with github.com/hslatman/caddy-crowdsec-bouncer/crowdsec@v0.15.0 \
     && rm -rf /go/pkg/mod /root/.cache/go-build
 
-FROM caddy:2.11.4
+FROM caddy:2.11.7
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 
@@ -39,10 +39,10 @@ LABEL org.opencontainers.image.title="ward-caddy" \
       org.opencontainers.image.source="https://github.com/bhagyajitjagdev/ward" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${WARD_VERSION}" \
-      io.ward.caddy="v2.11.4" \
-      io.ward.coraza="v3.7.0" \
-      io.ward.coraza_caddy="v2.6.1" \
+      io.ward.caddy="v2.11.7" \
+      io.ward.coraza="v3.8.1" \
+      io.ward.coraza_caddy="v2.6.2" \
       io.ward.crs="v4.25.0" \
-      io.ward.crowdsec_bouncer="v0.14.1" \
+      io.ward.crowdsec_bouncer="v0.15.0" \
       io.ward.ratelimit="v0.1.0" \
       io.ward.maxmind_geolocation="v1.0.3"
