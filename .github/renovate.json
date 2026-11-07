@@ -35,6 +35,12 @@
       "groupName": "github actions (non-major)"
     },
     {
+      "description": "Hold TypeScript at 6.x: openapi-typescript (`npm run generate:api`) drives TypeScript's JS compiler API, which TS 7's native compiler doesn't ship (`ts.factory` is undefined, so the codegen crashes). CI's `tsc -b` passes on 7, so a PR wouldn't catch it — lift once openapi-typescript supports TS 7.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
       "description": "A Postgres major needs a data migration (pg_upgrade or dump + restore) for every existing deployment — never a routine bump. It waits on the Dependency Dashboard; tick it there for a PR once the upgrade path is handled.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["postgres"],
