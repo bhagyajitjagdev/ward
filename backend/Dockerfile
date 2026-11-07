@@ -4,7 +4,7 @@
 # 1. Build the UI.
 FROM node:26-alpine AS ui
 WORKDIR /ui
-COPY ui/package.json ui/package-lock.json ui/.npmrc ./
+COPY ui/package.json ui/package-lock.json ./
 RUN npm ci
 COPY ui/ ./
 RUN npm run build

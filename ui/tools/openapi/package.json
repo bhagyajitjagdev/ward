@@ -1,0 +1,12 @@
+{
+  "name": "ward-ui-openapi-codegen",
+  "private": true,
+  "description": "Isolated toolchain for `npm run generate:api` (see ../../package.json). openapi-typescript drives TypeScript's classic JS compiler API, which TS 7 no longer ships, so it keeps its own TypeScript 6 here while the app compiles with TS 7.",
+  "scripts": {
+    "generate": "openapi-typescript ../../../backend/internal/api/openapi.yaml -o ../../src/lib/api.schema.d.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "~6.0.2"
+  }
+}

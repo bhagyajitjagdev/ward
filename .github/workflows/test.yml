@@ -2,9 +2,11 @@ name: test
 
 # Fast checks that don't need the stack: the Go unit tests (incl. the edge
 # versions guard, internal/edge/versions_test.go — a Caddy/module bump must sync
-# versions.json + the io.ward.* labels, or this fails) and the UI linter. The UI
-# typecheck + build already run inside the control-plane image build, and the
-# real-edge behaviour is gated by the e2e workflow.
+# versions.json + the io.ward.* labels, or this fails), the UI linter, and the API
+# codegen check (regenerate the UI's API types from openapi.yaml and fail on any
+# diff — catches both a stale api.schema.d.ts and a codegen toolchain that no
+# longer runs). The UI typecheck + build already run inside the control-plane
+# image build, and the real-edge behaviour is gated by the e2e workflow.
 
 on:
   push:
@@ -36,6 +38,12 @@ jobs:
         with:
           node-version: 26
           cache: npm
-          cache-dependency-path: ui/package-lock.json
+          cache-dependency-path: |
+            ui/package-lock.json
+            ui/tools/openapi/package-lock.json
       - run: npm --prefix ui ci
       - run: npm --prefix ui run lint
+      - name: API types match openapi.yaml
+        run: |
+          npm --prefix ui run generate:api
+          git diff --exit-code -- ui/src/lib/api.schema.d.ts
