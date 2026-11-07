@@ -3,6 +3,9 @@
   "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits"],
   "labels": ["dependencies"],
   "prHourlyLimit": 0,
+  "constraints": {
+    "npm": "^11"
+  },
   "customManagers": [
     {
       "customType": "regex",
