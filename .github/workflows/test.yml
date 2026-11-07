@@ -1,0 +1,41 @@
+name: test
+
+# Fast checks that don't need the stack: the Go unit tests (incl. the edge
+# versions guard, internal/edge/versions_test.go — a Caddy/module bump must sync
+# versions.json + the io.ward.* labels, or this fails) and the UI linter. The UI
+# typecheck + build already run inside the control-plane image build, and the
+# real-edge behaviour is gated by the e2e workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: go vet
+        run: go -C backend vet ./...
+      - name: go test
+        run: go -C backend test ./...
+
+  ui-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm --prefix ui ci
+      - run: npm --prefix ui run lint
