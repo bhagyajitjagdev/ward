@@ -45,10 +45,11 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "Hold TypeScript at 6.x: openapi-typescript (`npm run generate:api`) drives TypeScript's JS compiler API, which TS 7's native compiler doesn't ship (`ts.factory` is undefined, so the codegen crashes). CI's `tsc -b` passes on 7, so a PR wouldn't catch it — lift once openapi-typescript supports TS 7.",
-      "matchManagers": ["npm"],
+      "description": "The API codegen toolchain (ui/tools/openapi) stays on TypeScript 6: openapi-typescript (maintenance mode since 2026-09-19) drives TypeScript's classic JS compiler API, which TS 7 doesn't ship. Its majors wait on the Dependency Dashboard — visible, not hidden; CI's codegen check would fail them anyway. The app (ui/package.json) follows TypeScript normally.",
+      "matchFileNames": ["ui/tools/openapi/package.json"],
       "matchPackageNames": ["typescript"],
-      "allowedVersions": "<7"
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
     },
     {
       "description": "A Postgres major needs a data migration (pg_upgrade or dump + restore) for every existing deployment — never a routine bump. It waits on the Dependency Dashboard; tick it there for a PR once the upgrade path is handled.",
