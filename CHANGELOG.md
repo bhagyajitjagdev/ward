@@ -54,6 +54,14 @@ All notable changes to Ward are documented here. The format follows
   issuance forever.
 - `ward gen-config` omitted trusted IPs; it now uses the exact render path of a live apply.
 
+### Security
+
+- **Edge stack: Coraza 3.8.1** (coraza-caddy 2.6.2, Caddy 2.11.7, CrowdSec bouncer 0.15.0). Coraza
+  3.8.1 is an upstream security release covering 3.7.0 — notably a process crash on deeply nested
+  JSON bodies and a JSON memory-exhaustion path (both High), plus WAF bypasses such as `t:jsDecode`
+  octal escapes and truncated multipart bodies not setting `MULTIPART_STRICT_ERROR`. Upgrade the
+  edge image.
+
 _Ward is pre-1.0; expect breaking changes until the first tagged release._
 
 [Unreleased]: https://github.com/bhagyajitjagdev/ward/commits/main
