@@ -7,7 +7,7 @@ to `main` and every `v*` tag.
 ## Bring-up
 
 ```sh
-cp .env.example .env      # set WARD_TAG (latest / vX.Y.Z) and WARD_ACME_EMAIL
+cp .env.example .env      # set WARD_TAG (latest / X.Y.Z, e.g. 0.4.0) and WARD_ACME_EMAIL
 docker compose --env-file .env pull
 docker compose --env-file .env up -d
 ```
