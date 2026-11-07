@@ -38,6 +38,13 @@
       "groupName": "github actions (non-major)"
     },
     {
+      "description": "The top-level `constraints.npm` (the npm Renovate itself uses for lockfiles) stays on the project's toolchain, npm 11 — npm 12 fails the UI lockfile update with EALLOWREMOTE. A major bump waits on the Dependency Dashboard; tick it once the project moves to npm 12.",
+      "matchDepTypes": ["tool-constraint"],
+      "matchPackageNames": ["npm"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
       "description": "Hold TypeScript at 6.x: openapi-typescript (`npm run generate:api`) drives TypeScript's JS compiler API, which TS 7's native compiler doesn't ship (`ts.factory` is undefined, so the codegen crashes). CI's `tsc -b` passes on 7, so a PR wouldn't catch it — lift once openapi-typescript supports TS 7.",
       "matchManagers": ["npm"],
       "matchPackageNames": ["typescript"],
