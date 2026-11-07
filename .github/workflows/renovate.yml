@@ -13,7 +13,13 @@ name: renovate
 on:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      log_level:
+        description: Renovate log level (debug shows why a branch was skipped)
+        type: choice
+        options: [info, debug]
+        default: info
 
 permissions:
   contents: write
@@ -30,4 +36,4 @@ jobs:
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_ONBOARDING: "false"
-          LOG_LEVEL: info
+          LOG_LEVEL: ${{ inputs.log_level || 'info' }}
