@@ -13,7 +13,7 @@ import (
 var versionsJSON []byte
 
 // Versions returns the pinned edge component versions as component → version, e.g.
-// {"caddy": "v2.11.7", "crs": "v4.25.0", …}.
+// {"caddy": "v2.11.9", "crs": "v4.25.0", …}.
 func Versions() map[string]string {
 	var m map[string]string
 	_ = json.Unmarshal(versionsJSON, &m)
