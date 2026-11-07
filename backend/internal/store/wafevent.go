@@ -68,13 +68,16 @@ func (s *Store) InsertWAFEvents(ctx context.Context, events []model.WAFEvent) er
 			return err
 		}
 		tags, _ := json.Marshal(orEmpty(e.Tags))
+		// Every text field is request-derived; see storable.
 		rows = append(rows, wafEventRow{
-			ID: id.String(), TxID: e.TxID, TS: e.TS, ServiceID: e.ServiceID, Host: e.Host,
-			ClientIP: e.ClientIP, Authed: e.Authed, UserAgent: e.UserAgent, Method: e.Method,
-			Path: e.Path, URI: e.URI, Status: e.Status, EngineMode: e.EngineMode,
-			IsInterrupted: e.IsInterrupted, RuleID: e.RuleID, RuleMsg: e.RuleMsg,
-			Severity: e.Severity, MatchedTarget: e.MatchedTarget, MatchedValue: e.MatchedValue,
-			Tags: string(tags), IsAnomalyScore: e.IsAnomalyScore, CRSVersion: e.CRSVersion, Raw: e.Raw,
+			ID: id.String(), TxID: storable(e.TxID), TS: e.TS, ServiceID: e.ServiceID,
+			Host: storable(e.Host), ClientIP: storable(e.ClientIP), Authed: e.Authed,
+			UserAgent: storable(e.UserAgent), Method: storable(e.Method), Path: storable(e.Path),
+			URI: storable(e.URI), Status: e.Status, EngineMode: storable(e.EngineMode),
+			IsInterrupted: e.IsInterrupted, RuleID: e.RuleID, RuleMsg: storable(e.RuleMsg),
+			Severity: storable(e.Severity), MatchedTarget: storable(e.MatchedTarget),
+			MatchedValue: storable(e.MatchedValue), Tags: string(tags),
+			IsAnomalyScore: e.IsAnomalyScore, CRSVersion: storable(e.CRSVersion), Raw: storable(e.Raw),
 		})
 	}
 	_, err := s.DB.NewInsert().Model(&rows).Exec(ctx)
@@ -114,7 +117,7 @@ func (s *Store) ListWAFEvents(ctx context.Context, f WAFEventFilter) ([]model.WA
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	if err := q.Limit(limit).Scan(ctx); err != nil {
+	if err := q.Limit(int64(limit)).Scan(ctx); err != nil {
 		return nil, err
 	}
 	out := make([]model.WAFEvent, 0, len(rows))
@@ -287,7 +290,7 @@ func (s *Store) TopTriggers(ctx context.Context, f TriggerFilter) ([]model.WAFTr
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
-	q = q.Limit(limit)
+	q = q.Limit(int64(limit))
 
 	var rows []triggerRow
 	if err := q.Scan(ctx, &rows); err != nil {

@@ -31,7 +31,9 @@ func (s *Store) WriteAudit(ctx context.Context, actor, action, target, detail st
 	if err != nil {
 		return err
 	}
-	row := &auditRow{ID: id.String(), Actor: actor, Action: action, Target: target, Detail: detail, CreatedAt: time.Now().UTC()}
+	// Target/detail can echo request input; a NUL must not silently cost the entry (see storable).
+	row := &auditRow{ID: id.String(), Actor: storable(actor), Action: storable(action),
+		Target: storable(target), Detail: storable(detail), CreatedAt: time.Now().UTC()}
 	_, err = s.DB.NewInsert().Model(row).Exec(ctx)
 	return err
 }
@@ -42,7 +44,7 @@ func (s *Store) ListAudit(ctx context.Context, limit int) ([]model.AuditEntry, e
 		limit = 100
 	}
 	var rows []auditRow
-	if err := s.DB.NewSelect().Model(&rows).Order("created_at DESC").Limit(limit).Scan(ctx); err != nil {
+	if err := s.DB.NewSelect().Model(&rows).Order("created_at DESC").Limit(int64(limit)).Scan(ctx); err != nil {
 		return nil, err
 	}
 	out := make([]model.AuditEntry, 0, len(rows))
