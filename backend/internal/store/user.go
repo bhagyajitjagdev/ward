@@ -39,7 +39,8 @@ type sessionRow struct {
 
 // CountUsers returns the number of accounts (0 → setup not done).
 func (s *Store) CountUsers(ctx context.Context) (int, error) {
-	return s.DB.NewSelect().Model((*userRow)(nil)).Count(ctx)
+	n, err := s.DB.NewSelect().Model((*userRow)(nil)).Count(ctx)
+	return int(n), err
 }
 
 // CreateUser inserts an account with an already-hashed password.

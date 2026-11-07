@@ -46,10 +46,12 @@ func (s *Store) InsertAccessEvents(ctx context.Context, events []model.AccessEve
 		if err != nil {
 			return err
 		}
+		// Every text field is request-derived; see storable.
 		rows = append(rows, accessEventRow{
-			ID: id.String(), TS: e.TS.UTC(), ServiceID: e.ServiceID, Host: e.Host, ClientIP: e.ClientIP,
-			Method: e.Method, Path: e.Path, Query: e.Query, Status: e.Status,
-			DurationMs: e.DurationMs, Bytes: e.Bytes, UserAgent: e.UserAgent,
+			ID: id.String(), TS: e.TS.UTC(), ServiceID: e.ServiceID, Host: storable(e.Host),
+			ClientIP: storable(e.ClientIP), Method: storable(e.Method), Path: storable(e.Path),
+			Query: storable(e.Query), Status: e.Status, DurationMs: e.DurationMs, Bytes: e.Bytes,
+			UserAgent: storable(e.UserAgent),
 		})
 	}
 	_, err := s.DB.NewInsert().Model(&rows).Exec(ctx)
@@ -93,7 +95,7 @@ func (s *Store) ListAccessEvents(ctx context.Context, f AccessFilter) ([]model.A
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
-	if err := q.Limit(limit).Scan(ctx); err != nil {
+	if err := q.Limit(int64(limit)).Scan(ctx); err != nil {
 		return nil, err
 	}
 	out := make([]model.AccessEvent, 0, len(rows))
@@ -148,7 +150,7 @@ func (s *Store) AccessP95Since(ctx context.Context, since time.Time, serviceID s
 	}
 	var v float64
 	q := s.DB.NewSelect().TableExpr("access_events").ColumnExpr("duration_ms").
-		Where("ts > ?", since).OrderExpr("duration_ms ASC").Limit(1).Offset(offset)
+		Where("ts > ?", since).OrderExpr("duration_ms ASC").Limit(1).Offset(int64(offset))
 	if serviceID != "" {
 		q = q.Where("service_id = ?", serviceID)
 	}
@@ -197,7 +199,7 @@ func (s *Store) TopAccessPaths(ctx context.Context, since time.Time, serviceID s
 	var rows []AccessPathCount
 	q := s.DB.NewSelect().Table("access_events").
 		ColumnExpr("path").ColumnExpr("count(*) AS c").
-		Where("ts > ?", since).GroupExpr("path").OrderExpr("c DESC").Limit(limit)
+		Where("ts > ?", since).GroupExpr("path").OrderExpr("c DESC").Limit(int64(limit))
 	if serviceID != "" {
 		q = q.Where("service_id = ?", serviceID)
 	}
