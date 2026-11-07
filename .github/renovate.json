@@ -2,6 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits"],
   "labels": ["dependencies"],
+  "prHourlyLimit": 0,
   "customManagers": [
     {
       "customType": "regex",
@@ -16,9 +17,40 @@
   ],
   "packageRules": [
     {
-      "description": "One PR for the whole compiled-in edge stack. A human syncs backend/internal/edge/versions.json + the io.ward.* labels to match — the e2e + edge unit tests fail the PR until they do.",
+      "description": "Batch the routine UI updates: every non-major npm bump lands in one PR per run instead of one PR per package. Majors stay separate — they need reading.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "ui dependencies (non-major)"
+    },
+    {
+      "description": "Same for the backend's Go modules.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "go dependencies (non-major)"
+    },
+    {
+      "description": "Same for the workflow actions.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "github actions (non-major)"
+    },
+    {
+      "description": "A Postgres major needs a data migration (pg_upgrade or dump + restore) for every existing deployment — never a routine bump. It waits on the Dependency Dashboard; tick it there for a PR once the upgrade path is handled.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "One PR for the whole compiled-in edge stack: the pinned xcaddy modules …",
       "matchManagers": ["custom.regex"],
       "matchFileNames": ["caddy/Dockerfile", "backend/Dockerfile"],
+      "groupName": "edge stack"
+    },
+    {
+      "description": "… and the Caddy base image, in the same PR — modules pin a minimum caddy/v2 (crowdsec-bouncer 0.15.0 needs >= 2.11.7), so the two can't land apart. A human syncs backend/internal/edge/versions.json + the io.ward.* labels; the test workflow (internal/edge/versions_test.go) fails the PR until they do.",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["caddy"],
       "groupName": "edge stack"
     }
   ]
