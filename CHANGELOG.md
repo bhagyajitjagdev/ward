@@ -56,11 +56,16 @@ All notable changes to Ward are documented here. The format follows
 
 ### Security
 
-- **Edge stack: Coraza 3.8.1** (coraza-caddy 2.6.2, Caddy 2.11.7, CrowdSec bouncer 0.15.0). Coraza
+- **Edge stack: Coraza 3.8.1** (coraza-caddy 2.6.2, CrowdSec bouncer 0.15.0). Coraza
   3.8.1 is an upstream security release covering 3.7.0 — notably a process crash on deeply nested
   JSON bodies and a JSON memory-exhaustion path (both High), plus WAF bypasses such as `t:jsDecode`
   octal escapes and truncated multipart bodies not setting `MULTIPART_STRICT_ERROR`. Upgrade the
   edge image.
+- **Caddy 2.11.9** (from 2.11.4) — upstream security hardening and fixes. Caddy 2.11.8 also
+  tightened config validation (e.g. several `expression` lines in one matcher, unknown TLS
+  protocol names): configs Ward renders are unaffected, but a raw-Caddyfile fragment relying on
+  the old leniency is now rejected at validate, before apply. Requests with an invalid host get
+  `400` before any route runs.
 
 _Ward is pre-1.0; expect breaking changes until the first tagged release._
 
