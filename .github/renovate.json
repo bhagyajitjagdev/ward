@@ -4,7 +4,7 @@
   "labels": ["dependencies"],
   "prHourlyLimit": 0,
   "constraints": {
-    "npm": "^11"
+    "npm": "^12.0.0"
   },
   "customManagers": [
     {
